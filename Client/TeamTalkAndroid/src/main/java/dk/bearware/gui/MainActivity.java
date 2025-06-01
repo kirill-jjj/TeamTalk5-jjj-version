@@ -1565,13 +1565,22 @@ private EditText newmsg;
 
     @SuppressWarnings("deprecation")
     private void adjustSoundSystem(SharedPreferences prefs) {
-        if (audioManager.isBluetoothA2dpOn())
+        // audioManager is a class member
+        if (audioManager.isBluetoothA2dpOn()) {
             return;
+        }
+
         boolean voiceProcessing = prefs.getBoolean(Preferences.PREF_SOUNDSYSTEM_VOICEPROCESSING, false);
-        audioManager.setMode(voiceProcessing ?
-                AudioManager.MODE_IN_COMMUNICATION : AudioManager.MODE_NORMAL);
-        if (voiceProcessing)
+
+        if (voiceProcessing) {
+            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
             audioManager.setSpeakerphoneOn(prefs.getBoolean(Preferences.PREF_SOUNDSYSTEM_SPEAKERPHONE, false) && !audioManager.isWiredHeadsetOn());
+        } else {
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+            setVolumeControlStream(AudioManager.STREAM_MUSIC);
+            // No explicit change to speakerphone state here, matching original logic's conditional handling.
+        }
     }
 
     private void adjustMuteButton(ImageButton btn) {
