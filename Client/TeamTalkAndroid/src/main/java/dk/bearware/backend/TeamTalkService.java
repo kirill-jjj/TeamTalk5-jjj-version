@@ -569,7 +569,10 @@ public class TeamTalkService extends Service
     }
 
     public void enableVoiceTransmission(boolean enable) {
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (enable) {
+            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
             txSuspended = false;
             voxSuspended = false;
             int indevid = SoundDeviceConstants.TT_SOUNDDEVICE_ID_OPENSLES_DEFAULT;
@@ -579,12 +582,18 @@ public class TeamTalkService extends Service
         else {
             ttclient.enableVoiceTransmission(false);
             ttclient.closeSoundInputDevice();
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+            audioManager.abandonAudioFocus(null);
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
         }
         adjustMuteOnTx(enable);
     }
 
     public void enableVoiceActivation(boolean enable) {
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (enable) {
+            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
             txSuspended = false;
             voxSuspended = false;
             int indevid = SoundDeviceConstants.TT_SOUNDDEVICE_ID_OPENSLES_DEFAULT;
@@ -594,6 +603,9 @@ public class TeamTalkService extends Service
         else {
             ttclient.enableVoiceActivation(false);
             ttclient.closeSoundInputDevice();
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+            audioManager.abandonAudioFocus(null);
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
         }
         adjustMuteOnTx(enable);
     }
