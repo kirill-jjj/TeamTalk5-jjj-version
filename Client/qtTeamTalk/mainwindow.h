@@ -34,6 +34,7 @@
 #include <QNetworkAccessManager>
 #include <QSortFilterProxyModel>
 #include <optional>
+// QTimer is already included above by the previous diff
 
 #if defined(Q_OS_DARWIN)
 #include <Carbon/Carbon.h>
@@ -136,6 +137,7 @@ private:
     QQueue<QString> m_statusmsg;
     typedef QMap<int, TimerEvent> timers_t;
     timers_t m_timers;
+    QTimer*  m_soundDeviceChangeTimer;
 
     //keep track of who is talking
     typedef QSet<int> talkingset_t;

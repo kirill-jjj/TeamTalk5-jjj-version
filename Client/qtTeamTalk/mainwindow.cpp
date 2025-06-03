@@ -146,7 +146,7 @@ MainWindow::MainWindow(const QString& cfgfile)
 
     QApplication::setOrganizationName(COMPANYNAME);
     QApplication::setApplicationName(APPNAME_SHORT);
-    
+
     //figure out where to load settings from
     QString inipath = QApplication::applicationDirPath();
     inipath += "/" + QString(APPINIFILE);
@@ -163,7 +163,7 @@ MainWindow::MainWindow(const QString& cfgfile)
     else
     {
         //load from system default user settings
-        ttSettings = new QSettings(QSettings::IniFormat, 
+        ttSettings = new QSettings(QSettings::IniFormat,
                                    QSettings::UserScope,
                                    QApplication::organizationName(),
                                    QApplication::applicationName(), this);
@@ -627,6 +627,10 @@ MainWindow::MainWindow(const QString& cfgfile)
 #endif
 
     updateTabPages();
+
+    m_soundDeviceChangeTimer = new QTimer(this);
+    m_soundDeviceChangeTimer->setSingleShot(true);
+    connect(m_soundDeviceChangeTimer, &QTimer::timeout, this, &MainWindow::handleSoundDeviceChangeTimeout);
 }
 
 MainWindow::~MainWindow()
@@ -745,7 +749,7 @@ void MainWindow::loadSettings()
     //load shortcuts
     loadHotKeys();
 
-    int value = ttSettings->value(SETTINGS_SOUND_MASTERVOLUME, 
+    int value = ttSettings->value(SETTINGS_SOUND_MASTERVOLUME,
                                   SETTINGS_SOUND_MASTERVOLUME_DEFAULT).toInt();
     ui.volumeSlider->setValue(value);
     slotMasterVolumeChanged(value);  //force update on equal
@@ -997,7 +1001,7 @@ bool MainWindow::parseArgs(const QStringList& args)
         }
         else
         {
-            QMessageBox::information(this, tr("Startup arguments"), 
+            QMessageBox::information(this, tr("Startup arguments"),
                 tr("Program argument \"%1\" is unrecognized.").arg(args[i]));
         }
     }
@@ -1700,7 +1704,7 @@ void MainWindow::processTTMessage(const TTMessage& msg)
         CommandComplete cmd_type = m_commands[m_current_cmdid];
 
         //if we're waiting for a result from this command then clear it
-        //since the command failed (this must be done before showing 
+        //since the command failed (this must be done before showing
         //and error message since the login will otherwise complete).
         m_commands.remove(m_current_cmdid);
 
@@ -1866,28 +1870,32 @@ void MainWindow::processTTMessage(const TTMessage& msg)
         Q_ASSERT(msg.ttType == __SOUNDDEVICE);
         qDebug() << "New default sound input device: " << _Q(msg.sounddevice.szDeviceName);
         if (ttSettings->value(SETTINGS_SOUND_INPUTDEVICE, SOUNDDEVICEID_DEFAULT).toInt() == SOUNDDEVICEID_DEFAULT) {
-            initSound();
+            //initSound();
+            m_soundDeviceChangeTimer->start(2000); // Delay initSound call
         }
         break;
     case CLIENTEVENT_SOUNDDEVICE_NEW_DEFAULT_OUTPUT:
         Q_ASSERT(msg.ttType == __SOUNDDEVICE);
         qDebug() << "New default sound output device: " << _Q(msg.sounddevice.szDeviceName);
         if (ttSettings->value(SETTINGS_SOUND_OUTPUTDEVICE, SOUNDDEVICEID_DEFAULT).toInt() == SOUNDDEVICEID_DEFAULT) {
-            initSound();
+            //initSound();
+            m_soundDeviceChangeTimer->start(2000); // Delay initSound call
         }
         break;
     case CLIENTEVENT_SOUNDDEVICE_NEW_DEFAULT_INPUT_COMDEVICE:
         Q_ASSERT(msg.ttType == __SOUNDDEVICE);
         qDebug() << "New default communication input sound device: " << _Q(msg.sounddevice.szDeviceName);
         if (ttSettings->value(SETTINGS_SOUND_INPUTDEVICE, SOUNDDEVICEID_DEFAULT).toInt() == SOUNDDEVICEID_DEFAULT) {
-            initSound();
+            //initSound();
+            m_soundDeviceChangeTimer->start(2000); // Delay initSound call
         }
         break;
     case CLIENTEVENT_SOUNDDEVICE_NEW_DEFAULT_OUTPUT_COMDEVICE:
         Q_ASSERT(msg.ttType == __SOUNDDEVICE);
         qDebug() << "New default communication output sound device: " << _Q(msg.sounddevice.szDeviceName);
         if (ttSettings->value(SETTINGS_SOUND_OUTPUTDEVICE, SOUNDDEVICEID_DEFAULT).toInt() == SOUNDDEVICEID_DEFAULT) {
-            initSound();
+            //initSound();
+            m_soundDeviceChangeTimer->start(2000); // Delay initSound call
         }
         break;
     default :
@@ -1899,6 +1907,11 @@ void MainWindow::processTTMessage(const TTMessage& msg)
     // initial login. See #CLIENTEVENT_CMD_PROCESSING.
     if (m_current_cmdid == 0)
         slotUpdateUI();
+}
+
+void MainWindow::handleSoundDeviceChangeTimeout()
+{
+    initSound();
 }
 
 void MainWindow::cmdCompleteLoggedIn(int myuserid)
@@ -2111,7 +2124,7 @@ void MainWindow::disconnectFromServer()
         addStatusMsg(STATUSBAR_BYPASS, (TT_GetFlags(ttInst) & CLIENT_AUTHORIZED?tr("Disconnected from %1").arg(limitText(_Q(m_srvprop.szServerName))):tr("Disconnected from server")));
         addTextToSpeechMessage(TTS_SERVER_CONNECTIVITY, (TT_GetFlags(ttInst) & CLIENT_AUTHORIZED?tr("Disconnected from %1").arg(limitText(_Q(m_srvprop.szServerName))):tr("Disconnected from server")));
     }
-    
+
     if (m_host.latesthost == false && m_host.lastChan == true)
     {
         if (m_mychannel.nChannelID > 0)
@@ -2238,8 +2251,8 @@ void MainWindow::showTTErrorMessage(const ClientErrorMsg& msg, CommandComplete c
             QString nickname = ttSettings->value(SETTINGS_GENERAL_NICKNAME, SETTINGS_GENERAL_NICKNAME_DEFAULT).toString();
             if (m_host.nickname.size())
                 nickname = m_host.nickname;
-            int cmdid = TT_DoLoginEx(ttInst, _W(nickname), 
-                                     _W(m_host.username), _W(m_host.password), 
+            int cmdid = TT_DoLoginEx(ttInst, _W(nickname),
+                                     _W(m_host.username), _W(m_host.password),
                                      _W(QString(APPNAME_SHORT)));
             if (cmdid > 0)
                 m_commands.insert(cmdid, CMD_COMPLETE_LOGIN);
@@ -2293,7 +2306,7 @@ void MainWindow::showTTErrorMessage(const ClientErrorMsg& msg, CommandComplete c
     case CMDERR_NOT_LOGGEDIN :
         textmsg = tr("Cannot perform action because client is currently not logged in");break;
     case CMDERR_ALREADY_IN_CHANNEL :
-        title = MENUTEXT(ui.actionJoinChannel->text());        
+        title = MENUTEXT(ui.actionJoinChannel->text());
         textmsg = tr("Cannot join the same channel twice");break;
     case CMDERR_CHANNEL_ALREADY_EXISTS :
         textmsg = tr("Channel already exists");break;
@@ -2360,7 +2373,7 @@ void MainWindow::keysActive(quint32 keycode, quint32 mods, bool active)
     while(ite != m_hotkeys.end())
     {
         const keycomp_t& curcomp = ite.value();
-        
+
         if(keycomp_t(comp).intersect(curcomp) == curcomp)
             hotkeyToggle(ite.key(), active);
         ite++;
@@ -2513,7 +2526,7 @@ void MainWindow::timerEvent(QTimerEvent *event)
             float progress = 100.f;
             if(m_prev_desktopsession_id == m_desktopsession_id &&
                m_desktopsession_total)
-                progress = 100.0f * (m_desktopsession_total - m_desktopsession_remain) 
+                progress = 100.0f * (m_desktopsession_total - m_desktopsession_remain)
                            / (float)m_desktopsession_total;
 
             m_dtxprogress->setValue((int)progress);
@@ -2776,7 +2789,7 @@ void MainWindow::firewallInstall()
         answer.exec();
 
         if(answer.clickedButton() == YesButton &&
-            !TT_Firewall_AddAppException(_W(QString(APPTITLE)), 
+            !TT_Firewall_AddAppException(_W(QString(APPTITLE)),
                                         _W(appPath)))
         {
             QMessageBox::critical(this, tr("Firewall exception"),
@@ -3073,7 +3086,7 @@ void MainWindow::processTextMessage(const MyTextMessage& textmsg)
         QStringList cmd = getCustomCommand(textmsg);
         if(cmd.size() < 2)
             break;
-        
+
         if(cmd[0] == TT_INTCMD_DESKTOP_ACCESS)
         {
             User user;
@@ -3302,7 +3315,7 @@ void MainWindow::updateUserSubscription(int userid)
 
 void MainWindow::updateAudioStorage(bool enable, AudioStorageMode mode)
 {
-    AudioFileFormat aff = (AudioFileFormat)ttSettings->value(SETTINGS_MEDIASTORAGE_FILEFORMAT, 
+    AudioFileFormat aff = (AudioFileFormat)ttSettings->value(SETTINGS_MEDIASTORAGE_FILEFORMAT,
                                                              AFF_WAVE_FORMAT).toInt();
     QString audiofolder = ttSettings->value(SETTINGS_MEDIASTORAGE_AUDIOFOLDER).toString();
     auto sts = ttSettings->value(SETTINGS_MEDIASTORAGE_STREAMTYPES,
@@ -3333,7 +3346,7 @@ void MainWindow::updateAudioStorage(bool enable, AudioStorageMode mode)
             TT_StopRecordingMuxedAudioFile(ttInst);
         }
     }
-    
+
     if (mode & AUDIOSTORAGE_SEPARATEFILES)
     {
         int userCount = 0;
@@ -3406,7 +3419,7 @@ void MainWindow::updateAudioConfig()
 
 bool MainWindow::sendDesktopWindow()
 {
-    switch(ttSettings->value(SETTINGS_DESKTOPSHARE_MODE, 
+    switch(ttSettings->value(SETTINGS_DESKTOPSHARE_MODE,
                              DESKTOPSHARE_NONE).toInt())
     {
     case DESKTOPSHARE_DESKTOP :
@@ -3442,8 +3455,8 @@ bool MainWindow::sendDesktopWindow()
         return false;
     }
 
-    BitmapFormat bmp_mode = 
-        (BitmapFormat)ttSettings->value(SETTINGS_DESKTOPSHARE_BMPMODE, 
+    BitmapFormat bmp_mode =
+        (BitmapFormat)ttSettings->value(SETTINGS_DESKTOPSHARE_BMPMODE,
                                         BMP_RGB16_555).toInt();
 
     int ret = 0;
@@ -3487,7 +3500,7 @@ bool MainWindow::sendDesktopWindow()
         if(img)
         {
             DesktopWindow wnd = {};
-            
+
             wnd.nProtocol = DESKTOPPROTOCOL_ZLIB_1;
             wnd.nWidth = img->width;
             wnd.nHeight = img->height;
@@ -3557,7 +3570,7 @@ QRect MainWindow::getSharedWindowRect()
 }
 
 void MainWindow::sendDesktopCursor()
-{   
+{
     QPoint curPos = QCursor::pos();
 
 #if defined(Q_OS_LINUX)
@@ -3606,7 +3619,7 @@ void MainWindow::sendDesktopCursor()
         m_lastCursorPos = curPos;
         TT_SendDesktopCursorPosition(ttInst, UINT16(m_lastCursorPos.x()),
                                      UINT16(m_lastCursorPos.y()));
-        
+
     }
 }
 
@@ -3625,7 +3638,7 @@ void MainWindow::processDesktopInput(int userid, const DesktopInput& input)
         return;
 /*
     //ignore input if incorrect window has focus
-    DesktopShareMode mode = (DesktopShareMode)ttSettings->value(SETTINGS_DESKTOPSHARE_MODE, 
+    DesktopShareMode mode = (DesktopShareMode)ttSettings->value(SETTINGS_DESKTOPSHARE_MODE,
                              DESKTOPSHARE_NONE).toInt();
     switch(mode)
     {
@@ -3696,7 +3709,7 @@ void MainWindow::processDesktopInput(int userid, const DesktopInput& input)
         //QDebug dbg2(QtDebugMsg);
         //dbg2 << "Mouse input: ";
         //dbg2 << input.mouseInputs[i].nPosX << "," << input.mouseInputs[i].nPosY;
-        //dbg2 << "Buttons: "; 
+        //dbg2 << "Buttons: ";
         //for(int j=0;j<TT_DESKTOPINPUT_KEYS_MAX;j++)
         //    dbg2 << input.mouseInputs[i].buttonsDown[j] << ",";
 
@@ -3707,7 +3720,7 @@ void MainWindow::processDesktopInput(int userid, const DesktopInput& input)
         else if(TT_DesktopInput_KeyTranslate(key_trans, &inputs[i], &trans_input, 1))
             executeInputs.push_back(trans_input);
         else
-            qDebug() << "Failed to translate received desktop input. KeyCode: 0x" 
+            qDebug() << "Failed to translate received desktop input. KeyCode: 0x"
                      << QString::number(inputs[i].uKeyCode, 16);
     }
 
@@ -3786,7 +3799,7 @@ void MainWindow::enableHotKey(HotKeyID id, const hotkey_t& hk)
             keycomp.insert(ShiftMask);
             break;
         default:
-            keycode = XKeysymToKeycode(display, XStringToKeysym(QKeySequence(hk[i]).toString().toLatin1().data()));  
+            keycode = XKeysymToKeycode(display, XStringToKeysym(QKeySequence(hk[i]).toString().toLatin1().data()));
             keycomp.insert(keycode);
             break;
         }
@@ -3831,7 +3844,7 @@ void MainWindow::enableHotKey(HotKeyID id, const hotkey_t& hk)
         m_hotkeys[id] = ref;
     else
     {
-        QMessageBox::warning(this, tr("Enable HotKey"), 
+        QMessageBox::warning(this, tr("Enable HotKey"),
                              tr("Failed to register hotkey. Please try another key combination."));
     }
 #endif
@@ -3911,7 +3924,7 @@ void MainWindow::executeDesktopInput(const DesktopInput& input)
                       input.uMousePosX, input.uMousePosY);
 
          XEvent event = {};
-        
+
         switch(input.uKeyState)
         {
         case DESKTOPKEYSTATE_DOWN :
@@ -4103,7 +4116,7 @@ void MainWindow::slotClientNewInstance(bool /*checked=false*/)
         else if(freeno < 0)
             freeno = i;
     }
-    
+
 
     const QString newprofile = tr("New Profile"), delprofile = tr("Delete Profile"), curprofile = tr("Current Profile");
     if(profiles.size() < MAX_PROFILES)
@@ -4168,7 +4181,7 @@ void MainWindow::slotClientNewInstance(bool /*checked=false*/)
             inipath = ttSettings->fileName();
             args.push_back("-noconnect");
         }
-        else 
+        else
         {
             inipath = profiles[choice];
         }
@@ -4227,7 +4240,7 @@ void MainWindow::slotClientPreferences(bool /*checked =false */)
     uservideo_t::iterator local_ite = m_user_video.find(localvideo_userid);
     if(local_ite != m_user_video.end())
         disconnect(this, &MainWindow::newVideoCaptureFrame,
-                   (*local_ite)->uservideoWidget, 
+                   (*local_ite)->uservideoWidget,
                    &UserVideoWidget::slotNewVideoFrame);
 
     connect(this, &MainWindow::newVideoCaptureFrame, &dlg,
@@ -4252,7 +4265,7 @@ void MainWindow::slotClientPreferences(bool /*checked =false */)
         m_vid_exclude.insert(localvideo_userid);
     if(local_ite != m_user_video.end())
         connect(this, &MainWindow::newVideoCaptureFrame,
-                (*local_ite)->uservideoWidget, 
+                (*local_ite)->uservideoWidget,
                 &UserVideoWidget::slotNewVideoFrame);
 
     connect(this, &MainWindow::newVideoCaptureFrame,
@@ -4391,7 +4404,7 @@ void MainWindow::slotClientSoundDevices()
 {
     ui.menuInputDev->clear();
     ui.menuOutputDev->clear();
-    
+
     QMap<SoundSystem, QString> sndsys;
     sndsys[SOUNDSYSTEM_DSOUND] = "DirectSound";
     sndsys[SOUNDSYSTEM_ALSA] = "ALSA";
@@ -4504,7 +4517,7 @@ void MainWindow::slotClientRecordConversations(bool/* checked*/)
 
 void MainWindow::slotClientExit(bool /*checked =false */)
 {
-    //close using timer, otherwise gets a Qt assertion from the 
+    //close using timer, otherwise gets a Qt assertion from the
     //'setQuitOnLastWindowClosed' call.
 #if defined(ENABLE_TOLK)
     if(Tolk_IsLoaded())
@@ -4652,10 +4665,10 @@ void MainWindow::slotMeEnableVideoTransmission(bool /*checked*/)
             ui.actionEnableVideoTransmission->setChecked(false);
             ttSettings->setValue(SETTINGS_VIDCAP_ENABLE, false);
             QMessageBox::warning(this,
-            MENUTEXT(ui.actionEnableVideoTransmission->text()), 
+            MENUTEXT(ui.actionEnableVideoTransmission->text()),
             tr("Video device hasn't been configured properly. Check settings in 'Preferences'"));
         }
-        else 
+        else
         {
             if(!TT_StartVideoCaptureTransmission(ttInst, &vidcodec))
             {
@@ -4663,7 +4676,7 @@ void MainWindow::slotMeEnableVideoTransmission(bool /*checked*/)
                 TT_CloseVideoCaptureDevice(ttInst);
                 ttSettings->setValue(SETTINGS_VIDCAP_ENABLE, false);
                 QMessageBox::warning(this,
-                                 MENUTEXT(ui.actionEnableVideoTransmission->text()), 
+                                 MENUTEXT(ui.actionEnableVideoTransmission->text()),
                              tr("Failed to configure video codec. Check settings in 'Preferences'"));
                 return;
             }
@@ -4671,7 +4684,7 @@ void MainWindow::slotMeEnableVideoTransmission(bool /*checked*/)
             m_statusmode |= STATUSMODE_VIDEOTX;
             if(flags & CLIENT_AUTHORIZED)
             {
-                TT_DoChangeStatus(ttInst, m_statusmode, 
+                TT_DoChangeStatus(ttInst, m_statusmode,
                 _W(ttSettings->value(SETTINGS_GENERAL_STATUSMESSAGE).toString()));
             }
             ttSettings->setValue(SETTINGS_VIDCAP_ENABLE, true);
@@ -4686,7 +4699,7 @@ void MainWindow::slotMeEnableVideoTransmission(bool /*checked*/)
         m_statusmode &= ~STATUSMODE_VIDEOTX;
         if(flags & CLIENT_AUTHORIZED)
         {
-            TT_DoChangeStatus(ttInst, m_statusmode, 
+            TT_DoChangeStatus(ttInst, m_statusmode,
             _W(ttSettings->value(SETTINGS_GENERAL_STATUSMESSAGE).toString()));
         }
 
@@ -5206,7 +5219,7 @@ void MainWindow::slotChannelsCreateChannel(bool /*checked =false */)
     if (!dlg.joinChannel())
     {
         if(TT_DoMakeChannel(ttInst, &chan)<0)
-            QMessageBox::critical(this, MENUTEXT(ui.actionCreateChannel->text()), 
+            QMessageBox::critical(this, MENUTEXT(ui.actionCreateChannel->text()),
             tr("Failed to issue command to create channel"));
     }
     else
@@ -5219,7 +5232,7 @@ void MainWindow::slotChannelsCreateChannel(bool /*checked =false */)
             m_channel_passwd[CHANNELID_TEMPPASSWORD] = _Q(chan.szPassword);
         }
         else
-            QMessageBox::critical(this, MENUTEXT(ui.actionCreateChannel->text()), 
+            QMessageBox::critical(this, MENUTEXT(ui.actionCreateChannel->text()),
                                   tr("Failed to issue command to create channel"));
     }
 }
@@ -5258,7 +5271,7 @@ void MainWindow::slotChannelsDeleteChannel(bool /*checked =false */)
         return;
 
     if(TT_DoRemoveChannel(ttInst, chanid)<0)
-        QMessageBox::critical(this, MENUTEXT(ui.actionDeleteChannel->text()), 
+        QMessageBox::critical(this, MENUTEXT(ui.actionDeleteChannel->text()),
         tr("Failed to issue command to delete channel"));
 }
 
@@ -5480,7 +5493,7 @@ void MainWindow::startStreamMediaFile()
             statusmsg = QFileInfo(fileName).fileName();
 
         TT_DoChangeStatus(ttInst, m_statusmode, _W(statusmsg));
-        ////since streaming video takes over webcam stream we show as 
+        ////since streaming video takes over webcam stream we show as
         ////transmitting video
         //if(tx_mode & TRANSMIT_VIDEO)
         //    m_statusmode |= STATUSMODE_VIDEOTX;
@@ -5641,7 +5654,7 @@ void MainWindow::slotChannelsDownloadFile(bool /*checked =false */)
     int fileid = (int)m_proxyFilesModel->mapToSource(index).internalId();
     int channelid = m_filesmodel->getChannelID();
     RemoteFile remotefile;
-    if(fileid>0 && channelid>0 && 
+    if(fileid>0 && channelid>0 &&
        TT_GetChannelFile(ttInst, channelid, fileid, &remotefile))
     {
         QDir lastDir(ttSettings->value(SETTINGS_LAST_DIRECTORY, QDir::homePath()).toString());
@@ -5750,7 +5763,7 @@ void MainWindow::slotChannelsGenerateTTUrl(bool checked/*=false*/)
     addTextToSpeechMessage(tr("Link copied to clipboard"));
 }
 
-void MainWindow::slotFilesContextMenu(const QPoint &/* pos*/)   
+void MainWindow::slotFilesContextMenu(const QPoint &/* pos*/)
 {
     QMenu menu(this);
     QMenu* sortMenu = menu.addMenu(tr("Sort By..."));
@@ -5983,7 +5996,7 @@ void MainWindow::slotHelpManual(bool /*checked =false */)
     QString file = "file:///" + APPMANUAL;
     QDesktopServices::openUrl(file);
 }
-    
+
 void MainWindow::slotHelpVisitBearWare(bool /*checked=false*/)
 {
    QDesktopServices::openUrl(QUrl(APPWEBSITE));
@@ -6074,1871 +6087,4 @@ void MainWindow::slotUsersSpeakUserInformation(int id)
            (user.nStatusMode & STATUSMODE_DESKTOP))
             speakList += ", " + desktop;
     }
-    else if (id > 0 && (id == ui.channelsWidget->selectedChannel(true) || id == m_mychannel.nChannelID))
-    {
-        Channel chan;
-        if(!ui.channelsWidget->getChannel(id, chan))
-            return;
-
-        QString channel = tr("Channel"), passwd = tr("Password protected"), classroom = tr("Classroom"), topic, rootChan = tr("root"), hidden = tr("Hidden");
-        if(chan.nChannelID == TT_GetRootChannelID(ttInst))
-        {
-            speakList += QString("%1: ").arg(_Q(m_srvprop.szServerName));
-        }
-        else
-            speakList += QString("%1: ").arg(_Q(chan.szName));
-        if(chan.nChannelID>0 && TT_GetRootChannelID(ttInst) == chan.nChannelID)
-            channel += " " + rootChan;
-        topic = _Q(chan.szTopic);
-
-        speakList += channel;
-        if(chan.uChannelType & CHANNEL_CLASSROOM)
-            speakList += ", " + classroom;
-        if(chan.uChannelType & CHANNEL_HIDDEN)
-            speakList += ", " + hidden;
-        if(chan.bPassword)
-            speakList += ", " + passwd;
-        if (topic.size())
-            speakList += ", " + QString(tr("Topic: %1").arg(topic));
-
-        int usersCount = ui.channelsWidget->getUsersInChannel(chan.nChannelID).size();
-        if (usersCount > 0)
-            speakList += ", " + QString(tr("%1 users").arg(usersCount));
-
-        if ((id == m_mychannel.nChannelID || TT_GetMyUserType(ttInst) & USERTYPE_ADMIN) && (m_filesmodel->rowCount() > 0))
-            speakList += ", " + QString(tr("%1 files").arg(m_filesmodel->rowCount()));
-    }
-    addTextToSpeechMessage(speakList);
-}
-
-void MainWindow::slotUsersMessages(int userid)
-{
-    TextMessageDlg* dlg = getTextMessageDlg(userid);
-    if(dlg)
-    {
-        dlg->show();
-        dlg->activateWindow();
-        dlg->raise();
-    }
-}
-
-void MainWindow::slotUsersMuteVoice(int userid, bool mute)
-{
-    TT_SetUserMute(ttInst, userid, STREAMTYPE_VOICE, mute);
-    TT_PumpMessage(ttInst, CLIENTEVENT_USER_STATECHANGE, userid);
-}
-
-void MainWindow::slotUsersMuteMediaFile(int userid, bool mute)
-{
-    TT_SetUserMute(ttInst, userid, STREAMTYPE_MEDIAFILE_AUDIO, mute);
-    TT_PumpMessage(ttInst, CLIENTEVENT_USER_STATECHANGE, userid);
-}
-
-void MainWindow::slotUsersVolume(int userid)
-{
-    UserVolumeDlg dlg(userid, this);
-    dlg.exec();
-    TT_PumpMessage(ttInst, CLIENTEVENT_USER_STATECHANGE, userid);
-    slotUpdateUI();
-}
-
-void MainWindow::slotUsersOp(int userid, int chanid)
-{
-    bool op = (bool)TT_IsChannelOperator(ttInst, userid, chanid);
-
-    if ((TT_GetMyUserRights(ttInst) & USERRIGHT_OPERATOR_ENABLE) != USERRIGHT_NONE) //don't need password in this case
-        TT_DoChannelOp(ttInst, userid, chanid, !op);
-    else
-    {
-        Channel chan = {};
-        ui.channelsWidget->getChannel(chanid, chan);
-
-        PasswordDialog passDialog(MENUTEXT(ui.actionOp->text()), tr("Specify password"), _Q(chan.szOpPassword), this);
-        if (passDialog.exec() == QDialog::Accepted)
-        {
-            QString oppasswd = passDialog.getPassword();
-            TT_DoChannelOpEx(ttInst, userid, chanid, _W(oppasswd), !op);
-        }
-    }
-}
-
-void MainWindow::slotUsersKick(int userid, int chanid)
-{
-    bool confirm = true;
-    if (userid == TT_GetMyUserID(ttInst))
-    {
-        QMessageBox answer;
-        answer.setText(tr("Are you sure you want to kick yourself?"));
-        QAbstractButton *YesButton = answer.addButton(tr("&Yes"), QMessageBox::YesRole);
-        QAbstractButton *NoButton = answer.addButton(tr("&No"), QMessageBox::NoRole);
-        Q_UNUSED(NoButton);
-        answer.setIcon(QMessageBox::Question);
-        answer.setWindowTitle((QObject::sender() == ui.actionKickFromChannel?ui.actionKickFromChannel->text():ui.actionKickFromServer->text()));
-        answer.exec();
-        if(answer.clickedButton() != YesButton)
-            confirm = false;
-    }
-    if (confirm == true)
-        TT_DoKickUser(ttInst, userid, chanid);
-}
-
-void MainWindow::slotUsersKickBan(const User& user)
-{
-    bool confirm = true;
-    if (user.nUserID == TT_GetMyUserID(ttInst))
-    {
-        QMessageBox answer;
-        answer.setText(tr("Are you sure you want to kick and ban yourself?"));
-        QAbstractButton *YesButton = answer.addButton(tr("&Yes"), QMessageBox::YesRole);
-        QAbstractButton *NoButton = answer.addButton(tr("&No"), QMessageBox::NoRole);
-        Q_UNUSED(NoButton);
-        answer.setIcon(QMessageBox::Question);
-        answer.setWindowTitle((QObject::sender() == ui.actionKickAndBanFromChannel?ui.actionKickAndBanFromChannel->text().remove('&'):ui.actionKickBan->text().remove('&')));
-        answer.exec();
-        if(answer.clickedButton() != YesButton)
-            confirm = false;
-    }
-    if (confirm == true)
-    {
-        QStringList items = { tr("IP-address"), tr("Username") };
-        bool ok = false;
-        QInputDialog inputDialog;
-        inputDialog.setOkButtonText(tr("&OK"));
-        inputDialog.setCancelButtonText(tr("&Cancel"));
-        inputDialog.setComboBoxItems(items);
-        inputDialog.setComboBoxEditable(false);
-        inputDialog.setWindowTitle(tr("Ban user #%1").arg(user.nUserID));
-        if (user.nChannelID > 0)
-            inputDialog.setLabelText(tr("Ban User From Channel"));
-        else
-            inputDialog.setLabelText(tr("Ban User From Server"));
-        ok = inputDialog.exec();
-        QString choice = inputDialog.textValue();
-        if (ok)
-        {
-            if (ui.channelsWidget->getUser(user.nUserID).nUserID != 0)
-            {
-                //ban first since the user will otherwise have disappeared
-                if (choice == items[0])
-                    TT_DoBanUserEx(ttInst, user.nUserID, user.nChannelID > 0 ? BANTYPE_CHANNEL | BANTYPE_IPADDR : BANTYPE_IPADDR);
-                else
-                    TT_DoBanUserEx(ttInst, user.nUserID, user.nChannelID > 0 ? BANTYPE_CHANNEL | BANTYPE_USERNAME : BANTYPE_USERNAME);
-                TT_DoKickUser(ttInst, user.nUserID, user.nChannelID);
-            }
-            else // ban offline user
-            {
-                BannedUser ban = {};
-                TT_GetChannelPath(ttInst, user.nChannelID, ban.szChannelPath);
-                COPY_TTSTR(ban.szUsername, _Q(user.szUsername));
-                COPY_TTSTR(ban.szIPAddress, _Q(user.szIPAddress));
-                COPY_TTSTR(ban.szNickname, _Q(user.szNickname));
-                if (choice == items[0])
-                {
-                    if (versionSameOrLater(_Q(m_srvprop.szServerProtocolVersion), "5.13"))
-                    {
-                        bool ok;
-                        QString ipaddr = QInputDialog::getText(this, tr("Ban IP-address"), tr("IP-address ('/' for subnet, e.g. 192.168.0.0/16)"),
-                                                               QLineEdit::Normal, _Q(user.szIPAddress), &ok);
-                        if (ok && !ipaddr.isEmpty())
-                            COPY_TTSTR(ban.szIPAddress, ipaddr);
-                        else return;
-                    }
-                    ban.uBanTypes |= user.nChannelID > 0 ? BANTYPE_CHANNEL | BANTYPE_IPADDR : BANTYPE_IPADDR;
-                }
-                else
-                    ban.uBanTypes |= user.nChannelID > 0 ? BANTYPE_CHANNEL | BANTYPE_USERNAME : BANTYPE_USERNAME;
-                TT_DoBan(ttInst, &ban);
-            }
-        }
-    }
-}
-
-void MainWindow::slotTreeSelectionChanged()
-{
-    slotUpdateUI();
-    int channelid = ui.channelsWidget->selectedChannel(true);
-    if (m_filesmodel->getChannelID() != channelid && ((TT_GetMyUserType(ttInst) & USERTYPE_ADMIN) != USERTYPE_NONE))
-    {
-        //if admin changed selection change files view to new channel.
-        //if not admin then keep joined channel as file view.
-        updateChannelFiles(channelid);
-    }
-}
-
-void MainWindow::slotTreeContextMenu(const QPoint &/* pos*/)
-{
-    int userid = ui.channelsWidget->selectedUser();
-    if(userid>0)
-        ui.menuUsers->exec(QCursor::pos());
-
-    int chanid = ui.channelsWidget->selectedChannel();
-    if(chanid>0)
-        ui.menuChannels->exec(QCursor::pos());
-}
-
-void MainWindow::slotUpdateUI()
-{
-    int userid = ui.channelsWidget->selectedUser();
-    int chanid = ui.channelsWidget->selectedChannel();
-    int user_chanid = chanid;
-    if(!chanid)
-        user_chanid = ui.channelsWidget->selectedChannel(true);
-    int mychannel = m_mychannel.nChannelID;
-    int filescount = ui.filesView->selectedFiles().size();
-    ClientFlags statemask = TT_GetFlags(ttInst);
-    UserRights userrights = TT_GetMyUserRights(ttInst);
-    bool auth = (statemask & CLIENT_AUTHORIZED);
-    bool me_admin = (TT_GetMyUserType(ttInst) & USERTYPE_ADMIN);
-    bool me_op = TT_IsChannelOperator(ttInst, TT_GetMyUserID(ttInst), user_chanid);
-    bool tts = ttSettings->value(SETTINGS_TTS_ENGINE, SETTINGS_TTS_ENGINE_DEFAULT).toUInt() != TTSENGINE_NONE;
-    bool voiceactivated = (statemask & CLIENT_SNDINPUT_VOICEACTIVATED);
-    bool voicetx = (statemask & CLIENT_TX_VOICE);
-
-    ui.actionConnect->setChecked( (statemask & CLIENT_CONNECTING) || (statemask & CLIENT_CONNECTED));
-    ui.actionEnableEchoCancel->setChecked(ttSettings->value(SETTINGS_SOUND_ECHOCANCEL, SETTINGS_SOUND_ECHOCANCEL_DEFAULT).toBool());
-    ui.actionEnableAGC->setChecked(ttSettings->value(SETTINGS_SOUND_AGC, SETTINGS_SOUND_AGC_DEFAULT).toBool());
-    ui.actionEnableDenoising->setChecked(ttSettings->value(SETTINGS_SOUND_DENOISING, SETTINGS_SOUND_DENOISING_DEFAULT).toBool());
-    ui.actionSpeakClientStats->setEnabled(tts);
-    ui.actionChangeStatus->setEnabled(auth);
-#ifdef Q_OS_WIN32
-    ui.actionEnablePushToTalk->setChecked(TT_HotKey_IsActive(ttInst, HOTKEY_PUSHTOTALK) >= 0);
-#elif defined(Q_OS_LINUX) || defined(Q_OS_DARWIN)
-    ui.actionEnablePushToTalk->setChecked(m_hotkeys.find(HOTKEY_PUSHTOTALK) != m_hotkeys.end());
-#endif
-    ui.actionEnableVoiceActivation->setChecked(voiceactivated);
-    ui.actionHearMyself->setEnabled(m_mychannel.nChannelID > 0);
-    User myself;
-    if (ui.channelsWidget->getUser(TT_GetMyUserID(ttInst), myself))
-    {
-        ui.actionHearMyself->setChecked(myself.uLocalSubscriptions & SUBSCRIBE_VOICE);
-    }
-    //don't allow web cam to stream when video streaming is active
-    ui.actionEnableVideoTransmission->setChecked((CLIENT_VIDEOCAPTURE_READY & statemask) && 
-                                                 (CLIENT_TX_VIDEOCAPTURE & statemask));
-    ui.actionEnableDesktopSharing->setEnabled(mychannel>0);
-    ui.actionEnableDesktopSharing->setChecked(statemask & CLIENT_DESKTOP_ACTIVE);
-    ui.actionEnableTTS->setChecked(ttSettings->value(SETTINGS_TTS_ENABLE, SETTINGS_TTS_ENABLE_DEFAULT).toBool());
-    ui.actionEnableTTS->setEnabled(tts);
-    ui.actionEnableSounds->setChecked(ttSettings->value(SETTINGS_SOUNDEVENT_ENABLE, SETTINGS_SOUNDEVENT_ENABLE_DEFAULT).toBool());
-
-    User user  = {};
-    if (TT_GetUser(ttInst, userid, &user))
-    {
-        ui.actionMuteVoice->setChecked(user.uUserState & USERSTATE_MUTE_VOICE);
-        ui.actionMuteMediaFile->setChecked(user.uUserState & USERSTATE_MUTE_MEDIAFILE);
-        ui.actionDesktopAccessAllow->setChecked(user.uLocalSubscriptions & SUBSCRIBE_DESKTOPINPUT);
-
-        ui.actionUserMessages->setChecked(user.uLocalSubscriptions & SUBSCRIBE_USER_MSG);
-        ui.actionChannelMessages->setChecked(user.uLocalSubscriptions & SUBSCRIBE_CHANNEL_MSG);
-        ui.actionBroadcastMessages->setChecked(user.uLocalSubscriptions & SUBSCRIBE_BROADCAST_MSG);
-        ui.actionVoice->setChecked(user.uLocalSubscriptions & SUBSCRIBE_VOICE);
-        ui.actionVideo->setChecked(user.uLocalSubscriptions & SUBSCRIBE_VIDEOCAPTURE);
-        ui.actionDesktop->setChecked(user.uLocalSubscriptions & SUBSCRIBE_DESKTOP);
-        ui.actionDesktopInput->setChecked(user.uLocalSubscriptions & SUBSCRIBE_DESKTOPINPUT);
-        ui.actionMediaFile->setChecked(user.uLocalSubscriptions & SUBSCRIBE_MEDIAFILE);
-
-        ui.actionInterceptUserMessages->setChecked(user.uLocalSubscriptions & SUBSCRIBE_INTERCEPT_USER_MSG);
-        ui.actionInterceptChannelMessages->setChecked(user.uLocalSubscriptions & SUBSCRIBE_INTERCEPT_CHANNEL_MSG);
-        ui.actionInterceptVoice->setChecked(user.uLocalSubscriptions & SUBSCRIBE_INTERCEPT_VOICE);
-        ui.actionInterceptVideo->setChecked(user.uLocalSubscriptions & SUBSCRIBE_INTERCEPT_VIDEOCAPTURE);
-        ui.actionInterceptDesktop->setChecked(user.uLocalSubscriptions & SUBSCRIBE_INTERCEPT_DESKTOP);
-        ui.actionInterceptMediaFile->setChecked(user.uLocalSubscriptions & SUBSCRIBE_INTERCEPT_MEDIAFILE);
-    }
-
-    ui.actionViewUserInformation->setEnabled(userid>0);
-    ui.actionSpeakUserInformation->setEnabled(tts);
-    ui.actionMessages->setEnabled(userid>0);
-    ui.actionMuteVoice->setEnabled(userid>0);
-    ui.actionMuteMediaFile->setEnabled(userid>0);
-    ui.actionVolume->setEnabled(userid>0);
-    ui.actionOp->setEnabled(userid>0);
-    ui.actionKickFromChannel->setEnabled(userid>0);
-    ui.actionKickFromServer->setEnabled(userid>0 && (userrights & USERRIGHT_KICK_USERS));
-    ui.actionKickBan->setEnabled(userid>0 && (userrights & USERRIGHT_BAN_USERS));
-    ui.actionDesktopAccessAllow->setEnabled(userid>0);
-
-    ui.actionUserMessages->setEnabled(userid>0);
-    ui.actionChannelMessages->setEnabled(userid>0);
-    ui.actionBroadcastMessages->setEnabled(userid>0);
-    ui.actionVoice->setEnabled(userid>0);
-    ui.actionVideo->setEnabled(userid>0);
-    ui.actionDesktop->setEnabled(userid>0);
-    ui.actionDesktopInput->setEnabled(userid>0);
-    ui.actionMediaFile->setEnabled(userid>0);
-    //intercept only works for admins
-    ui.actionInterceptUserMessages->setEnabled(userid>0);
-    ui.actionInterceptChannelMessages->setEnabled(userid>0);
-    ui.actionInterceptVoice->setEnabled(userid>0);
-    ui.actionInterceptVideo->setEnabled(userid>0);
-    ui.actionInterceptDesktop->setEnabled(userid>0);
-    ui.actionInterceptMediaFile->setEnabled(userid>0);
-
-    ui.actionIncreaseVoiceVolume->setEnabled(userid>0 && user.nVolumeVoice < SOUND_VOLUME_MAX);
-    ui.actionLowerVoiceVolume->setEnabled(userid>0 && user.nVolumeVoice > SOUND_VOLUME_MIN);
-    ui.actionIncreaseMediaFileVolume->setEnabled(userid>0 && user.nVolumeMediaFile < SOUND_VOLUME_MAX);
-    ui.actionLowerMediaFileVolume->setEnabled(userid>0 && user.nVolumeMediaFile > SOUND_VOLUME_MIN);
-    ui.actionStoreForMove->setEnabled(userid>0 && (userrights & USERRIGHT_MOVE_USERS));
-    ui.actionMoveUser->setEnabled(m_moveusers.size() && (userrights & USERRIGHT_MOVE_USERS));
-    ui.actionMoveUsersDialog->setEnabled(userrights & USERRIGHT_MOVE_USERS);
-    ui.actionRelayVoiceStream->setEnabled(userid > 0 && !voiceactivated && !voicetx);
-    ui.actionRelayVoiceStream->setChecked(userid > 0 && userid == m_relayvoice_userid);
-    ui.actionRelayMediaFileStream->setEnabled(userid > 0 && !voiceactivated && !voicetx);
-    ui.actionRelayMediaFileStream->setChecked(userid > 0 && userid == m_relaymediafile_userid);
-
-    //ui.actionMuteAll->setEnabled(statemask & CLIENT_SOUND_READY);
-    ui.actionMuteAll->setChecked(statemask & CLIENT_SNDOUTPUT_MUTE);
-    bool storetextmsgs = ttSettings->value(SETTINGS_MEDIASTORAGE_CHANLOGFOLDER).toString().size() ||
-            ttSettings->value(SETTINGS_MEDIASTORAGE_USERLOGFOLDER).toString().size();
-    ui.actionMediaStorage->setChecked(m_audiostorage_mode != AUDIOSTORAGE_NONE || storetextmsgs);
-
-    //Channel-menu items
-    Channel chan = {};
-    if (TT_GetChannel(ttInst, user_chanid, &chan))
-    {
-    }
-
-    ui.actionLeaveChannel->setEnabled(m_mychannel.nChannelID > 0);
-    ui.actionLeaveChannel->setVisible(m_mychannel.nChannelID > 0);
-    ui.actionJoinChannel->setEnabled(chanid != m_mychannel.nChannelID && userid <= 0);
-    ui.actionJoinChannel->setVisible(chanid != m_mychannel.nChannelID && userid <= 0);
-    ui.actionViewChannelInfo->setEnabled(chanid>0);
-    ui.actionGenerateTTURL->setEnabled(chanid > 0);
-    ui.actionSpeakChannelInfo->setEnabled(tts);
-    ui.actionSpeakChannelStat->setEnabled(tts);
-    ui.actionBannedUsersInChannel->setEnabled(chanid>0);
-    ui.actionCreateChannel->setEnabled(chanid>0 || mychannel>0);
-    ui.actionUpdateChannel->setEnabled(chanid>0);
-    ui.actionDeleteChannel->setEnabled(chanid>0);
-    ui.actionStreamMediaFileToChannel->setChecked(statemask & 
-                                                  (CLIENT_STREAM_AUDIO | CLIENT_STREAM_VIDEO));
-    ui.actionPauseResumeStream->setEnabled(m_mfi && (m_mfi->nStatus == MFS_PLAYING || m_mfi->nStatus == MFS_PAUSED));
-    ui.actionPauseResumeStream->setText((m_mfi && m_mfi->nStatus == MFS_PAUSED) ? tr("Resume Stream") : tr("&Pause Stream"));
-    ui.actionUploadFile->setEnabled(m_myuseraccount.uUserRights & USERRIGHT_UPLOAD_FILES);
-    ui.actionDownloadFile->setEnabled(m_myuseraccount.uUserRights & USERRIGHT_DOWNLOAD_FILES);
-    ui.actionDeleteFile->setEnabled(filescount>0);
-
-    //Users-menu items dependent on Channel
-    bool modchan = (userrights & USERRIGHT_MODIFY_CHANNELS) == USERRIGHT_MODIFY_CHANNELS;
-    ui.actionAllowChannelTextMessages->setChecked(userCanChanMessage(userid, chan));
-    ui.actionAllowChannelTextMessages->setEnabled(userid > 0 && (me_op || modchan));
-    ui.actionAllowVoiceTransmission->setChecked(userCanVoiceTx(userid, chan));
-    ui.actionAllowVoiceTransmission->setEnabled(userid>0 && (me_op || modchan));
-    ui.actionAllowVideoTransmission->setChecked(userCanVideoTx(userid, chan));
-    ui.actionAllowVideoTransmission->setEnabled(userid>0 && (me_op || modchan));
-    ui.actionAllowDesktopTransmission->setChecked(userCanDesktopTx(userid, chan));
-    ui.actionAllowDesktopTransmission->setEnabled(userid>0 && (me_op || modchan));
-    ui.actionAllowMediaFileTransmission->setChecked(userCanMediaFileTx(userid, chan));
-    ui.actionAllowMediaFileTransmission->setEnabled(userid>0 && (me_op || modchan));
-
-    bool classroom = (chan.uChannelType & CHANNEL_CLASSROOM) == CHANNEL_CLASSROOM;
-    ui.actionAllowAllChannelTextMessages->setChecked(userCanChanMessage(TT_TRANSMITUSERS_FREEFORALL, chan));
-    ui.actionAllowAllChannelTextMessages->setEnabled(classroom && (me_op || modchan));
-    ui.actionAllowAllVoiceTransmission->setChecked(userCanVoiceTx(TT_TRANSMITUSERS_FREEFORALL, chan));
-    ui.actionAllowAllVoiceTransmission->setEnabled(classroom && (me_op || modchan));
-    ui.actionAllowAllVideoTransmission->setChecked(userCanVideoTx(TT_TRANSMITUSERS_FREEFORALL, chan));
-    ui.actionAllowAllVideoTransmission->setEnabled(classroom && (me_op || modchan));
-    ui.actionAllowAllDesktopTransmission->setChecked(userCanDesktopTx(TT_TRANSMITUSERS_FREEFORALL, chan));
-    ui.actionAllowAllDesktopTransmission->setEnabled(classroom && (me_op || modchan));
-    ui.actionAllowAllMediaFileTransmission->setChecked(userCanMediaFileTx(TT_TRANSMITUSERS_FREEFORALL, chan));
-    ui.actionAllowAllMediaFileTransmission->setEnabled(classroom && (me_op || modchan));
-
-    //Server-menu items
-    ui.actionUserAccounts->setEnabled(auth);
-    ui.actionBannedUsers->setEnabled(me_op || (userrights & USERRIGHT_BAN_USERS));
-    ui.actionOnlineUsers->setEnabled(auth);
-    ui.actionBroadcastMessage->setEnabled(auth && (userrights & USERRIGHT_TEXTMESSAGE_BROADCAST));
-    ui.actionServerProperties->setEnabled(auth);
-    ui.actionSaveConfiguration->setEnabled(auth && me_admin);
-    ui.actionServerStatistics->setEnabled(auth && me_admin);
-
-    ui.uploadButton->setEnabled(m_myuseraccount.uUserRights & USERRIGHT_UPLOAD_FILES);
-    ui.downloadButton->setEnabled(m_myuseraccount.uUserRights & USERRIGHT_DOWNLOAD_FILES);
-
-    if (m_sysicon)
-        m_sysicon->setToolTip(getTitle());
-}
-
-void MainWindow::slotUpdateMediaTabUI()
-{
-    auto mfi = m_mfi.value_or(MediaFileInfo());
-
-    switch (mfi.nStatus)
-    {
-    case MFS_PAUSED :
-    case MFS_PLAYING :
-    case MFS_STARTED :
-        if (mfi.nStatus == MFS_PAUSED)
-        {
-            ui.playMediaFileButton->setText(tr("&Play"));
-            ui.playMediaFileButton->setIcon(QIcon(QString::fromUtf8(":/images/images/play.png")));
-        }
-        else
-        {
-            ui.playMediaFileButton->setText(tr("&Pause"));
-            ui.playMediaFileButton->setIcon(QIcon(QString::fromUtf8(":/images/images/pause.png")));
-        }
-
-        ui.mediaDurationLabel->setText(tr("Duration: %1").arg(durationToString(mfi.uDurationMSec)));
-        if (!timerExists(TIMER_CHANGE_MEDIAFILE_POSITION))
-        {
-            ui.playbackTimeLabel->setText(durationToString(mfi.uElapsedMSec));
-            setMediaFileProgress(ui.playbackOffsetSlider, mfi);
-        }
-        ui.mediaAudioFmtLabel->setText(tr("Audio format: %1").arg(getMediaAudioDescription(mfi.audioFmt)));
-        ui.mediaVideoFmtLabel->setText(tr("Video format: %1").arg(getMediaVideoDescription(mfi.videoFmt)));
-        break;
-    case MFS_CLOSED :
-    case MFS_ERROR :
-    case MFS_ABORTED :
-        ui.playbackOffsetSlider->setValue(0);
-    case MFS_FINISHED :
-        ui.playMediaFileButton->setText(tr("&Play"));
-        ui.playMediaFileButton->setIcon(QIcon(QString::fromUtf8(":/images/images/play.png")));
-        ui.mediaDurationLabel->setText(tr("Duration: %1").arg(durationToString(0)));
-        ui.playbackTimeLabel->setText(durationToString(0));
-        setMediaFileProgress(ui.playbackOffsetSlider, mfi);
-        ui.mediaAudioFmtLabel->setText(tr("Audio format: %1").arg(""));
-        ui.mediaVideoFmtLabel->setText(tr("Video format: %1").arg(""));
-        break;
-    }
-    ui.playbackOffsetSlider->setEnabled(mfi.nStatus != MFS_CLOSED);
-    ui.mediaFileNameLabel->setText(tr("File name: %1").arg(_Q(mfi.szFileName)));
-
-    // init volume slider for media streaming
-    switch (m_mfp.audioPreprocessor.nPreprocessor)
-    {
-    case SPEEXDSP_AUDIOPREPROCESSOR :
-        ui.mediaVolumeSlider->setEnabled(m_mfp.audioPreprocessor.speexdsp.bEnableAGC);
-        ui.mediaVolumeSlider->setRange(SPEEXDSP_AGC_GAINLEVEL_MIN, SPEEXDSP_AGC_GAINLEVEL_MAX);
-        ui.mediaVolumeSlider->setValue(m_mfp.audioPreprocessor.speexdsp.nGainLevel);
-        ui.mediaVolumeLabel->setText(tr("%1 %").arg(100 * m_mfp.audioPreprocessor.speexdsp.nGainLevel / DEFAULT_SPEEXDSP_AGC_GAINLEVEL));
-        break;
-    case TEAMTALK_AUDIOPREPROCESSOR :
-        ui.mediaVolumeSlider->setEnabled(true);
-        ui.mediaVolumeSlider->setRange(SOUND_GAIN_MIN, /*SOUND_GAIN_MAX*/8000);
-        ui.mediaVolumeSlider->setValue(m_mfp.audioPreprocessor.ttpreprocessor.nGainLevel);
-        ui.mediaVolumeLabel->setText(tr("%1 %").arg(100 * m_mfp.audioPreprocessor.ttpreprocessor.nGainLevel / SOUND_GAIN_DEFAULT));
-        break;
-    case NO_AUDIOPREPROCESSOR :
-    case WEBRTC_AUDIOPREPROCESSOR :
-    case WEBRTC_AUDIOPREPROCESSOR_OBSOLETE_R4332 :
-        ui.mediaVolumeSlider->setEnabled(false);
-        ui.mediaVolumeSlider->setValue(0);
-        ui.mediaVolumeLabel->setText(tr("%1 %").arg(100));
-        break;
-    }
-
-    ui.openMediaFileButton->setEnabled(TT_GetFlags(ttInst) & CLIENT_AUTHORIZED);
-}
-
-void MainWindow::slotUpdateVideoTabUI()
-{
-    ClientFlags statemask = TT_GetFlags(ttInst);
-    int userid = ui.videogridWidget->selectedUser();
-
-    ui.detachVideoButton->setEnabled(userid>0);
-    ui.removeVideoButton->setEnabled(ui.videogridWidget->getActiveUsersCount());
-    ui.initVideoButton->setChecked(statemask & CLIENT_VIDEOCAPTURE_READY);
-}
-
-void MainWindow::slotUpdateDesktopTabUI()
-{
-    int userid = ui.desktopgridWidget->selectedUser();
-    User user = {};
-    ui.channelsWidget->getUser(userid, user);
-    
-    ui.detachDesktopButton->setEnabled(userid>0);
-    ui.removeDesktopButton->setEnabled(ui.desktopgridWidget->getActiveUsersCount());
-    ui.desktopaccessButton->setEnabled(userid>0);
-    ui.desktopaccessButton->setChecked(user.uPeerSubscriptions & SUBSCRIBE_DESKTOPINPUT);
-}
-
-void MainWindow::slotUploadFiles(const QStringList& files)
-{
-    int channelid = m_filesmodel->getChannelID();
-    Q_ASSERT(channelid > 0);
-
-    for (const QString& filepath : files)
-    {
-        QString filename = QFileInfo(filepath).fileName();
-        int remoteFileID = getRemoteFileID(channelid, filename);
-
-        if (remoteFileID != -1)
-        {
-            RemoteFile remoteFile;
-            if (TT_GetChannelFile(ttInst, channelid, remoteFileID, &remoteFile))
-            {
-                bool me_admin = (TT_GetMyUserType(ttInst) & USERTYPE_ADMIN);
-                bool myusername = m_host.username == _Q(remoteFile.szUsername);
-                bool op = TT_IsChannelOperator(ttInst, TT_GetMyUserID(ttInst), channelid);
-
-                if (me_admin || myusername || op)
-                {
-                    QMessageBox answer;
-                    answer.setText(tr("File %1 already exists on the server. Do you want to replace it?").arg(filename));
-                    QAbstractButton *YesButton = answer.addButton(tr("&Yes"), QMessageBox::YesRole);
-                    QAbstractButton *NoButton = answer.addButton(tr("&No"), QMessageBox::NoRole);
-                    Q_UNUSED(NoButton);
-                    answer.setIcon(QMessageBox::Question);
-                    answer.setWindowTitle(tr("File exists"));
-                    answer.exec();
-                    if(answer.clickedButton() == YesButton)
-                    {
-                        if (TT_DoDeleteFile(ttInst, channelid, remoteFileID) < 0)
-                        {
-                            QMessageBox::critical(this, MENUTEXT(ui.actionUploadFile->text()),
-                                                  tr("Failed to delete existing file %1").arg(filename));
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        continue;
-                    }
-                }
-                else
-                {
-                    QMessageBox::critical(this, MENUTEXT(ui.actionUploadFile->text()),
-                                          tr("You do not have permission to replace the file %1").arg(filename));
-                    continue;
-                }
-            }
-        }
-
-        QString nativeFilepath = QDir::toNativeSeparators(filepath);
-        if (!TT_DoSendFile(ttInst, channelid, _W(nativeFilepath)))
-        {
-            QMessageBox::critical(this, MENUTEXT(ui.actionUploadFile->text()),
-                                  tr("Failed to upload file %1").arg(nativeFilepath));
-        }
-    }
-}
-
-int MainWindow::getRemoteFileID(int channelid, const QString& filename)
-{
-    int count = 0;
-    if (TT_GetChannelFiles(ttInst, channelid, nullptr, &count))
-    {
-        QVector<RemoteFile> files(count);
-        if (TT_GetChannelFiles(ttInst, channelid, files.data(), &count))
-        {
-            for (const RemoteFile& file : files)
-            {
-                if (_Q(file.szFileName) == filename)
-                {
-                    return file.nFileID;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-void MainWindow::slotSendChannelMessage()
-{
-    if (m_mychannel.nChannelID <= 0)
-        return;
-
-    QString txtmsg;
-    switch(ui.tabWidget->currentIndex())
-    {
-    case TAB_CHAT :
-        txtmsg = ui.msgEdit->text();
-        ui.msgEdit->clear();
-        break;
-    case TAB_VIDEO :
-        txtmsg = ui.videomsgEdit->text();
-        ui.videomsgEdit->clear();
-        break;
-    case TAB_DESKTOP :
-        txtmsg = ui.desktopmsgEdit->text();
-        ui.desktopmsgEdit->clear();
-        break;
-    default :
-        break;
-    }
-
-    if(txtmsg.isEmpty())
-        return;
-
-    MyTextMessage msg;
-    msg.nFromUserID = TT_GetMyUserID(ttInst);
-    msg.nChannelID = m_mychannel.nChannelID;
-    msg.nMsgType = MSGTYPE_CHANNEL;
-
-    if (sendTextMessage(msg, txtmsg).size() == 0)
-    {
-        switch(ui.tabWidget->currentIndex())
-        {
-        case TAB_CHAT :
-            ui.msgEdit->setText(txtmsg);
-            break;
-        case TAB_VIDEO :
-            ui.videomsgEdit->setText(txtmsg);
-            break;
-        case TAB_DESKTOP :
-            ui.desktopmsgEdit->setText(txtmsg);
-            break;
-        default :
-            break;
-        }
-    }
-
-    transmitOn(STREAMTYPE_CHANNELMSG);
-}
-
-void MainWindow::slotUserDoubleClicked(int id)
-{
-    if(QApplication::keyboardModifiers() & Qt::ControlModifier)
-    {
-        User user;
-        if (!ui.channelsWidget->getUser(id, user))
-            return;
-
-        //first look through video capture
-        int userid = user.nUserID | VIDEOTYPE_CAPTURE;
-
-        //ensure we don't open two dialogs
-        if(m_user_video.find(userid) != m_user_video.end())
-            m_user_video.find(userid).value()->raise();
-        else
-        {
-            //resubscribe in case disabled
-            Subscriptions subs = SUBSCRIBE_NONE;
-            if((user.uLocalSubscriptions & SUBSCRIBE_VIDEOCAPTURE) == 0)
-                subs |= SUBSCRIBE_VIDEOCAPTURE;
-            if(user.nChannelID != m_mychannel.nChannelID)
-                subs |= SUBSCRIBE_INTERCEPT_VIDEOCAPTURE;
-
-            subscribeCommon(true, subs, user.nUserID);
-
-            m_vid_exclude.remove(userid);
-
-            slotDetachUserVideo(userid);
-        }
-
-        //now look through media files
-        userid = user.nUserID | VIDEOTYPE_MEDIAFILE;
-        //ensure we don't open two dialogs
-        if(m_user_video.find(userid) != m_user_video.end())
-            m_user_video.find(userid).value()->raise();
-        else
-        {
-            //resubscribe in case disabled
-            Subscriptions subs = SUBSCRIBE_NONE;
-            if((user.uLocalSubscriptions & SUBSCRIBE_MEDIAFILE) == 0)
-                subs |= SUBSCRIBE_MEDIAFILE;
-            if(user.nChannelID != m_mychannel.nChannelID)
-                subs |= SUBSCRIBE_INTERCEPT_MEDIAFILE;
-
-            subscribeCommon(true, subs, user.nUserID);
-
-            m_vid_exclude.remove(userid);
-
-            slotDetachUserVideo(userid);
-        }
-    }
-    else
-        slotUsersMessages(id);
-}
-
-void MainWindow::slotChannelDoubleClicked(int)
-{
-    slotChannelsJoinChannel(false);
-}
-
-void MainWindow::slotNewMyselfTextMessage(const MyTextMessage& textmsg)
-{
-    if(textmsg.nMsgType != MSGTYPE_USER)
-        return;
-
-    m_textmessages.addTextMessage(textmsg);
-}
-
-void MainWindow::slotTextMessageClosed(int userid)
-{
-    usermsg_t::iterator ite = m_usermsg.find(userid);
-    Q_ASSERT(ite != m_usermsg.end());
-    if(ite != m_usermsg.end())
-    {
-        //(*ite)->deleteLater();
-        m_usermsg.erase(ite);
-        ui.channelsWidget->setUserMessaged(userid, false);
-    }
-}
-
-void MainWindow::slotTransmitUsersChanged(int channelid, 
-                                      const QMap<int,StreamTypes>& transmitUsers)
-{
-    Channel chan;
-    if(!TT_GetChannel(ttInst, channelid, &chan))
-        return;
-
-    if(transmitUsers.size()>TT_TRANSMITUSERS_MAX)
-    {
-        QMessageBox::information(this, 
-            MENUTEXT(ui.actionAllowVoiceTransmission->text()),
-            tr("The maximum number of users who can transmit is %1")
-            .arg(TT_TRANSMITUSERS_MAX));
-        return;
-    }
-
-    int j = 0;
-    QMap<int,StreamTypes>::const_iterator i = transmitUsers.begin();
-    while(i != transmitUsers.end())
-    {
-        chan.transmitUsers[j][TT_TRANSMITUSERS_USERID_INDEX] = i.key();
-        if (chan.uChannelType & CHANNEL_CLASSROOM)
-            chan.transmitUsers[j][TT_TRANSMITUSERS_STREAMTYPE_INDEX] = i.value();
-        else
-            chan.transmitUsers[j][TT_TRANSMITUSERS_STREAMTYPE_INDEX] = ~i.value();
-        i++;j++;
-    }
-    if(j<TT_TRANSMITUSERS_MAX)
-    {
-        chan.transmitUsers[j][TT_TRANSMITUSERS_USERID_INDEX] = 0;
-        chan.transmitUsers[j][TT_TRANSMITUSERS_STREAMTYPE_INDEX] = STREAMTYPE_NONE;
-    }
-    TT_DoUpdateChannel(ttInst, &chan);
-}
-
-void MainWindow::slotChannelUpdate(const Channel& chan)
-{
-    Channel oldchan;
-    if(!ui.channelsWidget->getChannel(chan.nChannelID, oldchan))
-        return;
-
-    // Solo transmission
-    if(chan.transmitUsersQueue[0] == TT_GetMyUserID(ttInst) &&
-        oldchan.transmitUsersQueue[0] != TT_GetMyUserID(ttInst))
-        playSoundEvent(SOUNDEVENT_TRANSMITQUEUE_HEAD);
-
-    if(chan.transmitUsersQueue[0] != TT_GetMyUserID(ttInst) &&
-        oldchan.transmitUsersQueue[0] == TT_GetMyUserID(ttInst))
-        playSoundEvent(SOUNDEVENT_TRANSMITQUEUE_STOP);
-    if (chan.nChannelID == m_mychannel.nChannelID)
-        updateClassroomChannel(oldchan, chan);
-}
-
-void MainWindow::updateClassroomChannel(const Channel& oldchan, const Channel& newchan)
-{
-    auto userids = ui.channelsWidget->getUsersInChannel(newchan.nChannelID);
-    userids.push_back(TT_CLASSROOM_FREEFORALL);
-    for (auto id : userids)
-    {
-        User user = {};
-        ui.channelsWidget->getUser(id, user);
-        QString nick = getDisplayName(user);
-        if (id == TT_CLASSROOM_FREEFORALL)
-            nick = tr("Everyone");
-        if (user.nUserID == TT_GetMyUserID(ttInst))
-            nick = tr("You");
-
-        QString type, state;
-        TextToSpeechEvent ttsType;
-        StatusBarEvent statusType;
-        bool before = false, after = false, change = false;
-        before = userCanChanMessage(id, oldchan);
-        after = userCanChanMessage(id, newchan);
-        if (before != after)
-        {
-            type = tr("Channel messages");
-            if (after)
-                state = tr("Enabled");
-            else
-                state = tr("Disabled");
-            ttsType = TTS_CLASSROOM_CHANMSG_TX;
-            statusType = STATUSBAR_CLASSROOM_CHANMSG_TX;
-            change = true;
-        }
-        before = userCanVoiceTx(id, oldchan);
-        after = userCanVoiceTx(id, newchan);
-        if (before != after)
-        {
-            type = tr("Voice");
-            if (after)
-                state = tr("Enabled");
-            else
-                state = tr("Disabled");
-            statusType = STATUSBAR_CLASSROOM_VOICE_TX;
-            ttsType = TTS_CLASSROOM_VOICE_TX;
-            change = true;
-        }
-        before = userCanVideoTx(id, oldchan);
-        after = userCanVideoTx(id, newchan);
-        if (before != after)
-        {
-            type = tr("Video");
-            if (after)
-                state = tr("Enabled");
-            else
-                state = tr("Disabled");
-            statusType = STATUSBAR_CLASSROOM_VIDEO_TX;
-            ttsType = TTS_CLASSROOM_VIDEO_TX;
-            change = true;
-        }
-        before = userCanDesktopTx(id, oldchan);
-        after = userCanDesktopTx(id, newchan);
-        if (before != after)
-        {
-            type = tr("Desktop windows");
-            if (after)
-                state = tr("Enabled");
-            else
-                state = tr("Disabled");
-            statusType = STATUSBAR_CLASSROOM_DESKTOP_TX;
-            ttsType = TTS_CLASSROOM_DESKTOP_TX;
-            change = true;
-        }
-        before = userCanMediaFileTx(id, oldchan);
-        after = userCanMediaFileTx(id, newchan);
-        if (before != after)
-        {
-            type = tr("Media files");
-            if (after)
-                state = tr("Enabled");
-            else
-                state = tr("Disabled");
-            statusType = STATUSBAR_CLASSROOM_MEDIAFILE_TX;
-            ttsType = TTS_CLASSROOM_MEDIAFILE_TX;
-            change = true;
-        }
-        if (change)
-        {
-            addStatusMsg(statusType, UtilUI::getStatusBarMessage(SETTINGS_STATUSBARMSG_CLASSROOM, {{"{type}", type}, {"{state}", state}, {"{user}", nick}}));
-            addTextToSpeechMessage(ttsType, UtilTTS::getTTSMessage(SETTINGS_TTSMSG_CLASSROOM, {{"{type}", type}, {"{state}", state}, {"{user}", nick}}));
-        }
-    }
-}
-
-void MainWindow::slotInitVideo()
-{
-    if((TT_GetFlags(ttInst) & CLIENT_VIDEOCAPTURE_READY) == 0)
-    {
-        if(!initVideoCaptureFromSettings())
-            QMessageBox::warning(this, tr("Start Webcam"), 
-            tr("Video device hasn't been configured properly. Check settings in 'Preferences'"));
-    }
-    else
-    {
-        TT_CloseVideoCaptureDevice(ttInst);
-    }
-    slotUpdateUI();
-    slotUpdateVideoTabUI();
-}
-
-//TODO: remove this
-void MainWindow::slotAddUserVideo()
-{
-    QVector<int> users = ui.channelsWidget->getUsersInChannel(m_mychannel.nChannelID);
-    QMenu menu(this);
-
-    //local video frames have userid 0
-    if((TT_GetFlags(ttInst) & CLIENT_VIDEOCAPTURE_READY) &&
-       m_user_video.find(0 | VIDEOTYPE_CAPTURE) == m_user_video.end() &&
-       !ui.videogridWidget->userExists(0 | VIDEOTYPE_CAPTURE))
-    {
-        QAction* myself = menu.addAction(tr("Myself"));
-        myself->setData(0);
-        if(users.size())
-            menu.addSeparator();
-        users.push_back(0);
-    }
-
-    //we don't want "myself" in the list
-    int index = -1;
-    if((index = users.indexOf(TT_GetMyUserID(ttInst))) != -1)
-        users.remove(index);
-
-    for(int i=0;i<users.size();i++)
-    {
-        if(m_user_video.find(users[i]) != m_user_video.end() ||
-           ui.videogridWidget->userExists(users[i]))
-           continue;
-
-        User user;
-        if(TT_GetUser(ttInst, users[i], &user) &&
-           (user.uLocalSubscriptions & SUBSCRIBE_VIDEOCAPTURE) == 0)
-           menu.addAction(getDisplayName(user))->setData(users[i]);
-    }
-
-    if(menu.isEmpty())return;
-    
-    QAction* action = menu.exec(QCursor::pos());
-    if(!action)
-        return;
-
-    int userid = action->data().toInt();
-    if(userid != 0)
-    {
-        //this is basically the same as slotUsersSubscriptionsVideo(..)
-        subscribeCommon(true, SUBSCRIBE_VIDEOCAPTURE, userid);
-    }
-
-    ui.videogridWidget->slotAddUser(userid);
-
-    m_vid_exclude.remove(userid);
-}
-
-//TODO: remove this
-void MainWindow::slotRemoveUserVideoGrid()
-{
-    int userid = ui.videogridWidget->selectedUser();
-    if(userid<0)
-    {
-        QVector<int> users = ui.videogridWidget->activeUsers();
-        QMenu menu(this);
-        if(ui.videogridWidget->userExists(0))
-        {
-            QAction* myself = menu.addAction(tr("Myself"));
-            myself->setData(0);
-            if(users.size())
-                menu.addSeparator();
-        }
-        User user;
-        for(int i=0;i<users.size();i++)
-        {
-            if(TT_GetUser(ttInst, users[i], &user))
-                menu.addAction(getDisplayName(user))->setData(users[i]);
-        }
-
-        if(menu.isEmpty())
-            return;
-
-        QAction* action = menu.exec(QCursor::pos());
-        if(!action)
-            return;
-        userid = action->data().toInt();
-    }
-
-    if(userid>0)
-        subscribeCommon(false, SUBSCRIBE_VIDEOCAPTURE, userid);
-    m_vid_exclude.insert(userid);
-
-    slotRemoveUserVideo(userid);
-}
-
-void MainWindow::slotRemoveUserVideo(int userid)
-{
-    ui.videogridWidget->removeUser(userid);
-}
-
-void MainWindow::slotDetachUserVideo(int userid)
-{
-    if(userid == 0)
-        userid = ui.videogridWidget->selectedUser();
-
-    if(userid<0)
-        return;
-
-    QSize size = ui.videogridWidget->getUserImageSize(userid);
-    //if size if (0,0) then set size to invalid
-    if(QSize(0,0) == size)
-        size = QSize();
-
-    ui.videogridWidget->removeUser(userid);
-    Q_ASSERT(m_user_video.find(userid) == m_user_video.end());
-
-    slotNewUserVideoDlg(userid, size);
-}
-
-void MainWindow::slotNewUserVideoDlg(int userid, const QSize& size)
-{
-    User user = {};
-
-    //user might not exist in channels tree since it can be local video (userid=0)
-    ui.channelsWidget->getUser(userid & VIDEOTYPE_USERMASK, user);
-
-    UserVideoDlg* dlg;
-    if(size.isValid())
-        dlg = new UserVideoDlg(userid, user, size, nullptr);
-    else
-        dlg = new UserVideoDlg(userid, user, nullptr);
-
-    connect(this, &MainWindow::userUpdate, dlg,
-            &UserVideoDlg::slotUserUpdate);
-    connect(dlg, &UserVideoDlg::userVideoDlgClosing,
-            this, &MainWindow::slotUserVideoDlgClosing);
-    connect(this, &MainWindow::preferencesModified, dlg->uservideoWidget,
-            &UserVideoWidget::slotUpdateVideoTextBox);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    switch(userid & VIDEOTYPE_MASK)
-    {
-    case VIDEOTYPE_CAPTURE :
-        connect(this, &MainWindow::newVideoCaptureFrame,
-                dlg->uservideoWidget, &UserVideoWidget::slotNewVideoFrame);
-        connect(this, &MainWindow::newVideoCaptureFrame, dlg,
-                &UserVideoDlg::slotNewVideoFrame);
-        m_user_video[userid] = dlg;
-        break;
-    case VIDEOTYPE_MEDIAFILE :
-        connect(this, &MainWindow::newMediaVideoFrame,
-                dlg->uservideoWidget, &UserVideoWidget::slotNewVideoFrame);
-        connect(this, &MainWindow::newMediaVideoFrame, dlg,
-                &UserVideoDlg::slotNewVideoFrame);
-        m_user_video[userid] = dlg;
-        break;
-    }
-    dlg->show();
-}
-
-void MainWindow::slotUserVideoDlgClosing(int userid)
-{
-    Q_ASSERT(userid & VIDEOTYPE_MASK);
-    switch(userid & VIDEOTYPE_MASK)
-    {
-    case VIDEOTYPE_CAPTURE :
-    {
-        uservideo_t::iterator ite = m_user_video.find(userid);
-        Q_ASSERT(ite != m_user_video.end());
-        if(ite == m_user_video.end())
-            return;
-
-        m_user_video.erase(ite);
-
-        User user;
-        if(!TT_GetUser(ttInst, userid & VIDEOTYPE_USERMASK, &user))
-            return;
-        //check to see if video session is still active
-        if((user.uUserState & USERSTATE_VIDEOCAPTURE) == USERSTATE_NONE)
-            return;
-        ui.videogridWidget->slotAddUser(userid);
-    }
-    break;
-    case VIDEOTYPE_MEDIAFILE :
-    {
-        uservideo_t::iterator ite = m_user_video.find(userid);
-        Q_ASSERT(ite != m_user_video.end());
-        if(ite == m_user_video.end())
-            return;
-
-        m_user_video.erase(ite);
-
-        User user;
-        if(!TT_GetUser(ttInst, userid & VIDEOTYPE_USERMASK, &user))
-            return;
-        //check to see if video session is still active
-        if((user.uUserState & USERSTATE_MEDIAFILE_VIDEO) == USERSTATE_NONE)
-            return;
-
-        ui.videogridWidget->slotAddUser(userid);
-    }
-    break;
-    }
-}
-
-void MainWindow::slotAddUserDesktopGrid()
-{
-    QVector<int> users = ui.channelsWidget->getUsersInChannel(m_mychannel.nChannelID);
-    QMenu menu(this);
-
-    //we don't want "myself" in the list
-    int index = -1;
-    if((index = users.indexOf(TT_GetMyUserID(ttInst))) != -1)
-        users.remove(index);
-
-    for(int i=0;i<users.size();i++)
-    {
-        if(m_userdesktop.find(users[i]) != m_userdesktop.end() ||
-           ui.desktopgridWidget->userExists(users[i]))
-           continue;
-
-        User user;
-        if(TT_GetUser(ttInst, users[i], &user) &&
-           (user.uLocalSubscriptions & SUBSCRIBE_DESKTOP) == 0)
-           menu.addAction(getDisplayName(user))->setData(users[i]);
-    }
-
-    if(menu.isEmpty())
-        return;
-    
-    QAction* action = menu.exec(QCursor::pos());
-    if(!action)
-        return;
-
-    int userid = action->data().toInt();
-    if(userid != 0)
-    {
-        //this is basically the same as slotUsersSubscriptionsDesktop(..)
-        subscribeCommon(true, SUBSCRIBE_DESKTOP, userid);
-    }
-}
-
-void MainWindow::slotRemoveUserDesktopGrid()
-{
-    int userid = ui.desktopgridWidget->selectedUser();
-    if(userid<0)
-    {
-        QVector<int> users = ui.desktopgridWidget->activeUsers();
-        QMenu menu(this);
-        User user;
-        for(int i=0;i<users.size();i++)
-        {
-            if(TT_GetUser(ttInst, users[i], &user))
-                menu.addAction(getDisplayName(user))->setData(users[i]);
-        }
-
-        if(menu.isEmpty())
-            return;
-
-        QAction* action = menu.exec(QCursor::pos());
-        if(!action)
-            return;
-        userid = action->data().toInt();
-    }
-    ui.desktopgridWidget->removeUser(userid);
-    if(userid>0)
-        subscribeCommon(false, SUBSCRIBE_DESKTOP, userid);
-}
-
-void MainWindow::slotRemoveUserDesktop(int userid)
-{
-    //remove from grid
-    ui.desktopgridWidget->removeUser(userid);
-
-    //close dialog
-    userdesktop_t::iterator ite = m_userdesktop.find(userid);
-    if(ite == m_userdesktop.end())
-        return;
-    (*ite)->close();
-}
-
-void MainWindow::slotAccessUserDesktop(bool enable)
-{
-    int userid = ui.desktopgridWidget->selectedUser();
-    if(!userid)
-        return;
-
-    TextMessage msg = {};
-    msg.nFromUserID = TT_GetMyUserID(ttInst);
-    msg.nMsgType = MSGTYPE_CUSTOM;
-    msg.nToUserID = userid;
-    QString cmd = makeCustomCommand(TT_INTCMD_DESKTOP_ACCESS, 
-                                    QString::number(enable));
-    sendTextMessage(msg, cmd);
-
-    slotUpdateDesktopTabUI();
-}
-
-void MainWindow::slotDetachUserDesktopGrid()
-{
-    int userid = ui.desktopgridWidget->selectedUser();
-    if(userid<0)
-        return;
-
-    QSize imgsize = ui.desktopgridWidget->getUserImageSize(userid);
-    if(!imgsize.isValid())
-        return;
-
-    ui.desktopgridWidget->removeUser(userid);
-    Q_ASSERT(m_userdesktop.find(userid) == m_userdesktop.end());
-    slotDetachUserDesktop(userid, imgsize);
-}
-
-void MainWindow::slotDetachUserDesktop(int userid, const QSize& size)
-{
-    User user;
-    if(!ui.channelsWidget->getUser(userid, user))
-        return;
-
-    UserDesktopDlg* dlg;
-    if(size.isValid())
-        dlg = new UserDesktopDlg(user, size, nullptr);
-    else
-    {
-        dlg = new UserDesktopDlg(user, QSize(640, 480), nullptr);
-    }
-
-    connect(this, &MainWindow::newDesktopWindow,
-            dlg, &UserDesktopDlg::userDesktopWindowUpdate);
-    connect(this, &MainWindow::userUpdate, dlg,
-            &UserDesktopDlg::slotUserUpdate);
-    connect(this, &MainWindow::userUpdate, dlg,
-            &UserDesktopDlg::userUpdated);
-    connect(this, &MainWindow::userDesktopCursor,
-            dlg, &UserDesktopDlg::userDesktopCursorUpdate);
-    connect(dlg, &UserDesktopDlg::userDesktopDlgClosing,
-            this, &MainWindow::slotUserDesktopDlgClosing);
-    connect(dlg, &UserDesktopDlg::userDesktopWindowEnded,
-            this, &MainWindow::slotRemoveUserDesktop);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    m_userdesktop[userid] = dlg;
-    dlg->show();
-}
-
-void MainWindow::slotUserDesktopDlgClosing(int userid)
-{
-    userdesktop_t::iterator ite = m_userdesktop.find(userid);
-    Q_ASSERT(ite != m_userdesktop.end());
-    if(ite == m_userdesktop.end())
-        return;
-
-    m_userdesktop.erase(ite);
-
-    User user;
-    if(!TT_GetUser(ttInst, userid, &user))
-        return;
-    //check to see if desktop session is still active
-    if((user.uUserState & USERSTATE_DESKTOP) == USERSTATE_NONE)
-        return;
-    //add back to grid   
-    ui.desktopgridWidget->slotAddUser(userid);
-}
-
-void MainWindow::slotUserJoin(int channelid, const User& user)
-{
-    //also set here in case VIEW_ALL_USERS is false
-    QString audiofolder = ttSettings->value(SETTINGS_MEDIASTORAGE_AUDIOFOLDER).toString();
-    AudioFileFormat aff = (AudioFileFormat)ttSettings->value(SETTINGS_MEDIASTORAGE_FILEFORMAT, AFF_WAVE_FORMAT).toInt();
-    if(m_audiostorage_mode & AUDIOSTORAGE_SEPARATEFILES)
-        TT_SetUserMediaStorageDir(ttInst, user.nUserID, _W(audiofolder), nullptr, aff);
-
-    //only play sound when we're not currently performing an operation
-    //like e.g. joining a new channel
-    if(m_mychannel.nChannelID == channelid && m_current_cmdid == 0)
-    {
-        playSoundEvent(SOUNDEVENT_NEWUSER);
-    }
-
-    //set use to mute if enabled
-    TT_SetUserStereo(ttInst, user.nUserID, STREAMTYPE_VOICE,
-                     !ttSettings->value(SETTINGS_SOUND_SOUNDOUT_MUTE_LEFT,
-                     SETTINGS_SOUND_SOUNDOUT_MUTE_LEFT_DEFAULT).toBool(),
-                     !ttSettings->value(SETTINGS_SOUND_SOUNDOUT_MUTE_RIGHT,
-                     SETTINGS_SOUND_SOUNDOUT_MUTE_RIGHT_DEFAULT).toBool());
-
-    double d = ttSettings->value(SETTINGS_SOUND_MEDIASTREAM_VOLUME,
-                                 SETTINGS_SOUND_MEDIASTREAM_VOLUME_DEFAULT).toDouble() / 100;
-    TT_SetUserVolume(ttInst, user.nUserID, STREAMTYPE_MEDIAFILE_AUDIO,
-                     (int)(refVolume(SETTINGS_SOUND_MASTERVOLUME_DEFAULT) * d));
-    TT_PumpMessage(ttInst, CLIENTEVENT_USER_STATECHANGE, user.nUserID);
-}
-
-void MainWindow::slotUserLeft(int channelid, const User& user)
-{
-    if(m_mychannel.nChannelID == channelid && m_current_cmdid == 0)
-    {
-        playSoundEvent(SOUNDEVENT_REMOVEUSER);
-    }
-
-    //we cannot get user from channels-widget since user has left channel
-    if(m_mychannel.nChannelID == channelid &&
-       (user.uLocalSubscriptions & SUBSCRIBE_DESKTOPINPUT))
-       subscribeCommon(false, SUBSCRIBE_DESKTOPINPUT, user.nUserID);
-}
-
-void MainWindow::slotUserUpdate(const User& user)
-{
-    User oldUser;
-    if(ui.channelsWidget->getUser(user.nUserID, oldUser))
-    {
-        QString nickname = getDisplayName(user);
-        if((oldUser.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_USER_MSG) !=
-            (user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_USER_MSG))
-        {
-            addStatusMsg(STATUSBAR_SUBSCRIPTIONS_INTERCEPT_TEXTMSG_PRIVATE, tr("%1 changed subscription \"%2\" to: %3")
-                .arg(nickname)
-                .arg(MENUTEXT(ui.actionInterceptUserMessages->text()))
-                .arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_USER_MSG?
-                     tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_INTERCEPT_TEXTMSG_PRIVATE, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionInterceptUserMessages->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_USER_MSG?tr("On"):tr("Off")));
-            playSoundEvent(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_USER_MSG?SOUNDEVENT_INTERCEPT:SOUNDEVENT_INTERCEPTEND);
-        }
-        if((oldUser.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_CHANNEL_MSG) !=
-            (user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_CHANNEL_MSG))
-        {
-            addStatusMsg(STATUSBAR_SUBSCRIPTIONS_INTERCEPT_TEXTMSG_CHANNEL, tr("%1 changed subscription \"%2\" to: %3")
-                .arg(nickname)
-                .arg(MENUTEXT(ui.actionInterceptChannelMessages->text()))
-                .arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_CHANNEL_MSG?
-                     tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_INTERCEPT_TEXTMSG_CHANNEL, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionInterceptChannelMessages->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_CHANNEL_MSG?tr("On"):tr("Off")));
-            playSoundEvent(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_CHANNEL_MSG?SOUNDEVENT_INTERCEPT:SOUNDEVENT_INTERCEPTEND);
-        }
-        if((oldUser.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VOICE) !=
-            (user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VOICE))
-        {
-            addStatusMsg(STATUSBAR_SUBSCRIPTIONS_INTERCEPT_VOICE, tr("%1 changed subscription \"%2\" to: %3")
-                .arg(nickname)
-                .arg(MENUTEXT(ui.actionInterceptVoice->text()))
-                .arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VOICE?
-                     tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_INTERCEPT_VOICE, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionInterceptVoice->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VOICE?tr("On"):tr("Off")));
-            playSoundEvent(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VOICE?SOUNDEVENT_INTERCEPT:SOUNDEVENT_INTERCEPTEND);
-        }
-        if((oldUser.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VIDEOCAPTURE) !=
-            (user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VIDEOCAPTURE))
-        {
-            addStatusMsg(STATUSBAR_SUBSCRIPTIONS_INTERCEPT_VIDEO, tr("%1 changed subscription \"%2\" to: %3")
-                .arg(nickname)
-                .arg(MENUTEXT(ui.actionInterceptVideo->text()))
-                .arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VIDEOCAPTURE?
-                     tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_INTERCEPT_VIDEO, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionInterceptVideo->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VIDEOCAPTURE?tr("On"):tr("Off")));
-            playSoundEvent(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_VIDEOCAPTURE?SOUNDEVENT_INTERCEPT:SOUNDEVENT_INTERCEPTEND);
-        }
-        if((oldUser.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_DESKTOP) !=
-            (user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_DESKTOP))
-        {
-            addStatusMsg(STATUSBAR_SUBSCRIPTIONS_INTERCEPT_DESKTOP, tr("%1 changed subscription \"%2\" to: %3")
-                .arg(nickname)
-                .arg(MENUTEXT(ui.actionInterceptDesktop->text()))
-                .arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_DESKTOP?
-                     tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_INTERCEPT_DESKTOP, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionInterceptDesktop->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_DESKTOP?tr("On"):tr("Off")));
-            playSoundEvent(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_DESKTOP?SOUNDEVENT_INTERCEPT:SOUNDEVENT_INTERCEPTEND);
-        }
-        if((oldUser.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_MEDIAFILE) !=
-            (user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_MEDIAFILE))
-        {
-            addStatusMsg(STATUSBAR_SUBSCRIPTIONS_INTERCEPT_MEDIAFILE, tr("%1 changed subscription \"%2\" to: %3")
-                .arg(nickname)
-                .arg(MENUTEXT(ui.actionInterceptMediaFile->text()))
-                .arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_MEDIAFILE?
-                     tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_INTERCEPT_MEDIAFILE, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionInterceptMediaFile->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_MEDIAFILE?tr("On"):tr("Off")));
-            playSoundEvent(user.uPeerSubscriptions & SUBSCRIBE_INTERCEPT_MEDIAFILE?SOUNDEVENT_INTERCEPT:SOUNDEVENT_INTERCEPTEND);
-        }
-        if(m_mychannel.nChannelID == user.nChannelID && user.nChannelID)
-        {
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_USER_MSG) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_USER_MSG))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_TEXTMSG_PRIVATE, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionUserMessages->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_USER_MSG?
-                         tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_TEXTMSG_PRIVATE, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionUserMessages->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_USER_MSG?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_CHANNEL_MSG) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_CHANNEL_MSG))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_TEXTMSG_CHANNEL, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionChannelMessages->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_CHANNEL_MSG?
-                         tr("On"):tr("Off")));
-            addTextToSpeechMessage(TTS_SUBSCRIPTIONS_TEXTMSG_CHANNEL, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionChannelMessages->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_CHANNEL_MSG?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_BROADCAST_MSG) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_BROADCAST_MSG))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_TEXTMSG_BROADCAST, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionBroadcastMessages->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_BROADCAST_MSG?
-                         tr("On"):tr("Off")));
-                addTextToSpeechMessage(TTS_SUBSCRIPTIONS_TEXTMSG_BROADCAST, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionBroadcastMessages->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_BROADCAST_MSG?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_VOICE) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_VOICE))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_VOICE, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionVoice->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_VOICE?
-                         tr("On"):tr("Off")));
-                addTextToSpeechMessage(TTS_SUBSCRIPTIONS_VOICE, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionVoice->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_VOICE?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_VIDEOCAPTURE) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_VIDEOCAPTURE))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_VIDEO, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionVideo->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_VIDEOCAPTURE?
-                         tr("On"):tr("Off")));
-                addTextToSpeechMessage(TTS_SUBSCRIPTIONS_VIDEO, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionVideo->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_VIDEOCAPTURE?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_DESKTOP) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_DESKTOP))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_DESKTOP, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionDesktop->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_DESKTOP?
-                         tr("On"):tr("Off")));
-                addTextToSpeechMessage(TTS_SUBSCRIPTIONS_DESKTOP, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionDesktop->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_DESKTOP?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_DESKTOPINPUT) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_DESKTOPINPUT))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_DESKTOPINPUT, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionDesktopInput->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_DESKTOPINPUT?
-                         tr("On"):tr("Off")));
-                addTextToSpeechMessage(TTS_SUBSCRIPTIONS_DESKTOPINPUT, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionDesktopInput->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_DESKTOPINPUT?tr("On"):tr("Off")));
-            }
-            if((oldUser.uPeerSubscriptions & SUBSCRIBE_MEDIAFILE) !=
-                (user.uPeerSubscriptions & SUBSCRIBE_MEDIAFILE))
-            {
-                addStatusMsg(STATUSBAR_SUBSCRIPTIONS_MEDIAFILE, tr("%1 changed subscription \"%2\" to: %3")
-                    .arg(nickname)
-                    .arg(MENUTEXT(ui.actionMediaFile->text()))
-                    .arg(user.uPeerSubscriptions & SUBSCRIBE_MEDIAFILE?
-                     tr("On"):tr("Off")));
-                addTextToSpeechMessage(TTS_SUBSCRIPTIONS_MEDIAFILE, tr("%1 changed subscription \"%2\" to: %3").arg(nickname).arg(MENUTEXT(ui.actionMediaFile->text())).arg(user.uPeerSubscriptions & SUBSCRIBE_MEDIAFILE?tr("On"):tr("Off")));
-            }
-        }
-    }
-}
-
-void MainWindow::slotToggleQuestionMode(bool checked)
-{
-    if(checked)
-        m_statusmode |= STATUSMODE_QUESTION;
-    else
-        m_statusmode &= ~STATUSMODE_QUESTION;
-
-    QString statusmsg = ttSettings->value(SETTINGS_GENERAL_STATUSMESSAGE).toString();
-    if(TT_GetFlags(ttInst) & CLIENT_AUTHORIZED)
-        TT_DoChangeStatus(ttInst, m_statusmode, _W(statusmsg));
-}
-
-void MainWindow::slotUpdateVideoCount(int count)
-{
-    if(count == 0)
-        ui.tabWidget->setTabText(TAB_VIDEO, tr("&Video"));
-    else
-        ui.tabWidget->setTabText(TAB_VIDEO, tr("&Video (%1)").arg(count));
-}
-
-void MainWindow::slotUpdateDesktopCount(int count)
-{
-    if(count == 0)
-        ui.tabWidget->setTabText(TAB_DESKTOP, tr("&Desktops"));
-    else
-        ui.tabWidget->setTabText(TAB_DESKTOP, tr("&Desktops (%1)").arg(count));
-}
-
-void MainWindow::slotMasterVolumeChanged(int value)
-{
-    int vol = refVolume(value);
-    TT_SetSoundOutputVolume(ttInst, vol);
-}
-
-void MainWindow::slotMicrophoneGainChanged(int value)
-{
-    AudioPreprocessor preprocessor = initDefaultAudioPreprocessor(NO_AUDIOPREPROCESSOR);
-
-    TT_GetSoundInputPreprocessEx(ttInst, &preprocessor);
-    switch (preprocessor.nPreprocessor)
-    {
-    case NO_AUDIOPREPROCESSOR :
-    case WEBRTC_AUDIOPREPROCESSOR_OBSOLETE_R4332 :
-        preprocessor = initDefaultAudioPreprocessor(NO_AUDIOPREPROCESSOR);
-        TT_SetSoundInputPreprocessEx(ttInst, &preprocessor);
-        TT_SetSoundInputGainLevel(ttInst, refGain(value));
-        break;
-    case TEAMTALK_AUDIOPREPROCESSOR :
-        preprocessor.ttpreprocessor.nGainLevel = refGain(value);
-        TT_SetSoundInputPreprocessEx(ttInst, &preprocessor);
-        break;
-    case SPEEXDSP_AUDIOPREPROCESSOR :
-        // Only no audio preprocessor or webrtc is currently supported.
-        Q_ASSERT(preprocessor.nPreprocessor == WEBRTC_AUDIOPREPROCESSOR);
-        break;
-    case WEBRTC_AUDIOPREPROCESSOR :
-    {
-        bool agc = ttSettings->value(SETTINGS_SOUND_AGC, SETTINGS_SOUND_AGC_DEFAULT).toBool();
-        float percent = float(value);
-        percent /= 100.;
-        preprocessor.webrtc.gaincontroller2.bEnable = agc;
-        preprocessor.webrtc.gaincontroller2.fixeddigital.fGainDB = float(WEBRTC_GAINCONTROLLER2_FIXEDGAIN_MAX * percent);
-        TT_SetSoundInputPreprocessEx(ttInst, &preprocessor);
-        TT_SetSoundInputGainLevel(ttInst, agc ? SOUND_GAIN_DEFAULT : refGain(value));
-        break;
-    }
-    }
-}
-
-void MainWindow::slotVoiceActivationLevelChanged(int value)
-{
-    TT_SetVoiceActivationLevel(ttInst, value);
-}
-
-void MainWindow::slotTrayIconChange(QSystemTrayIcon::ActivationReason reason)
-{
-    if(reason == QSystemTrayIcon::Trigger)
-    {
-        showNormal();
-        activateWindow(); //if we don't call this the window will end up in 
-                          //the background for some reason (on win32)
-    }
-}
-
-void MainWindow::slotLoadTTFile(const QString& filepath)
-{
-    QFile ttfile(QDir::fromNativeSeparators(filepath));
-    if(!ttfile.open(QFile::ReadOnly))
-    {
-        QMessageBox::information(this, tr("Load File"), 
-            tr("Failed to load file %1").arg(filepath));
-        return;
-    }
-
-    QByteArray data = ttfile.readAll();
-    QDomDocument doc(TTFILE_ROOT);
-    if(!doc.setContent(data))
-    {
-        QMessageBox::information(this, tr("Load File"), 
-            tr("Failed to load file %1").arg(filepath));
-        return;
-    }
-
-    QDomElement rootElement(doc.documentElement());
-    QString version = rootElement.attribute("version");
-    
-    if(!versionSameOrLater(version, TTFILE_VERSION))
-    {
-        QMessageBox::information(this, tr("Load File"), 
-            tr("The file \"%1\" is incompatible with %2")
-            .arg(QDir::toNativeSeparators(filepath))
-            .arg(APPTITLE));
-        return;
-    }
-
-    QDomElement element = rootElement.firstChildElement("host");
-    HostEntry entry;
-    if(!getServerEntry(element, entry))
-    {
-        QMessageBox::information(this, tr("Load File"), 
-            tr("Failed to extract host-information from %1").arg(filepath));
-        return;
-    }
-
-    addLatestHost(entry);
-    m_host = entry;
-    if (!element.firstChildElement(CLIENTSETUP_TAG).isNull())
-    {
-        QMessageBox answer;
-        answer.setText(tr("The file %1 contains %2 setup information.\r\nShould these settings be applied?").arg(filepath).arg(APPNAME_SHORT));
-        QAbstractButton *YesButton = answer.addButton(tr("&Yes"), QMessageBox::YesRole);
-        QAbstractButton *NoButton = answer.addButton(tr("&No"), QMessageBox::NoRole);
-        Q_UNUSED(NoButton);
-        answer.setIcon(QMessageBox::Question);
-        answer.setWindowTitle(tr("Load %1 File").arg(TTFILE_EXT));
-        answer.exec();
-        if(answer.clickedButton() == YesButton)
-        {
-            //if no nickname specified use from .tt file
-            if(m_host.nickname.size())
-                ttSettings->setValue(SETTINGS_GENERAL_NICKNAME, m_host.nickname);
-
-            //if no gender specified use from .tt file
-            if (m_host.gender != GENDER_NONE)
-                ttSettings->setValue(SETTINGS_GENERAL_GENDER, m_host.gender);
-        
-            //if no PTT-key specified use from .tt file
-            hotkey_t hotkey;
-            if(m_host.hotkey.size())
-            {
-                saveHotKeySettings(HOTKEY_PUSHTOTALK, m_host.hotkey);
-                enableHotKey(HOTKEY_PUSHTOTALK, m_host.hotkey);
-            }
-
-            //voice activation
-            if(m_host.voiceact >= 0)
-                enableVoiceActivation(m_host.voiceact>0);
-
-            //video capture
-            if(isValid(m_host.capformat))
-            {
-                ttSettings->setValue(SETTINGS_VIDCAP_FOURCC, m_host.capformat.picFourCC);
-                ttSettings->setValue(SETTINGS_VIDCAP_RESOLUTION, QString("%1x%2")
-                                 .arg(m_host.capformat.nWidth)
-                                 .arg(m_host.capformat.nHeight));
-                ttSettings->setValue(SETTINGS_VIDCAP_FPS, QString("%1/%2")
-                                 .arg(m_host.capformat.nFPS_Numerator)
-                                 .arg(m_host.capformat.nFPS_Denominator));
-                TT_CloseVideoCaptureDevice(ttInst);
-            }
-
-            //video codec
-            switch(m_host.vidcodec.nCodec)
-            {
-                case WEBM_VP8_CODEC :
-                    ttSettings->setValue(SETTINGS_VIDCAP_CODEC,
-                                     m_host.vidcodec.nCodec);
-                    ttSettings->setValue(SETTINGS_VIDCAP_WEBMVP8_BITRATE,
-                                         m_host.vidcodec.webm_vp8.nRcTargetBitrate);
-                    TT_CloseVideoCaptureDevice(ttInst);
-                break;
-            case SPEEX_CODEC :
-            case SPEEX_VBR_CODEC :
-            case OPUS_CODEC :
-            case NO_CODEC :
-                break;
-            }
-        }
-    }
-
-    disconnectFromServer();
-    connectToServer();
-}
-
-void MainWindow::slotSoftwareUpdateReply(QNetworkReply* reply, bool manualCheck)
-{
-    QByteArray data = reply->readAll();
-
-    QDomDocument doc("foo");
-    bool updateFound = false;
-    if(doc.setContent(data))
-    {
-        QString version = newVersionAvailable(doc);
-        QString betaVersion = newBetaVersionAvailable(doc);
-        if(version.size() || betaVersion.size())
-        {
-            updateFound = true;
-            if(ttSettings->value(SETTINGS_DISPLAY_APPUPDATE, SETTINGS_DISPLAY_APPUPDATE_DEFAULT).toBool() || manualCheck)
-            {
-                if (version.size())
-                {
-                    QString downloadurl = downloadUpdateURL(doc);
-                    if(ttSettings->value(SETTINGS_DISPLAY_APPUPDATE_DLG, SETTINGS_DISPLAY_APPUPDATE_DLG_DEFAULT).toBool() || manualCheck)
-                    {
-                        QMessageBox answer;
-                        answer.setText(tr("A new version of %1 is available: %2. Do you wish to open the download page now?").arg(APPNAME_SHORT).arg(version));
-                        QAbstractButton *YesButton = answer.addButton(tr("&Yes"), QMessageBox::YesRole);
-                        QAbstractButton *NoButton = answer.addButton(tr("&No"), QMessageBox::NoRole);
-                        Q_UNUSED(NoButton);
-                        answer.setIcon(QMessageBox::Question);
-                        answer.setWindowTitle(tr("New version available"));
-                        answer.exec();
-
-                        if(answer.clickedButton() == YesButton)
-                            QDesktopServices::openUrl(downloadurl);
-                    }
-                    else
-                        addStatusMsg(STATUSBAR_BYPASS, tr("New version available: %1\r\nYou can download it on the page below:\r\n%2").arg(version).arg(downloadurl));
-                }
-            }
-
-            if(ttSettings->value(SETTINGS_DISPLAY_APPUPDATE_BETA, SETTINGS_DISPLAY_APPUPDATE_BETA_DEFAULT).toBool())
-            {
-                if (betaVersion.size())
-                {
-                    QString downloadurl = downloadBetaUpdateURL(doc);
-                    if(ttSettings->value(SETTINGS_DISPLAY_APPUPDATE_DLG, SETTINGS_DISPLAY_APPUPDATE_DLG_DEFAULT).toBool() || manualCheck)
-                    {
-                        QMessageBox answer;
-                        answer.setText(tr("A new beta version of %1 is available: %2. Do you wish to open the download page now?").arg(APPNAME_SHORT).arg(betaVersion));
-                        QAbstractButton *YesButton = answer.addButton(tr("&Yes"), QMessageBox::YesRole);
-                        QAbstractButton *NoButton = answer.addButton(tr("&No"), QMessageBox::NoRole);
-                        Q_UNUSED(NoButton);
-                        answer.setIcon(QMessageBox::Question);
-                        answer.setWindowTitle(tr("New beta version available"));
-                        answer.exec();
-
-                        if(answer.clickedButton() == YesButton)
-                            QDesktopServices::openUrl(downloadurl);
-                    }
-                    else
-                        addStatusMsg(STATUSBAR_BYPASS, tr("New beta version available: %1\r\nYou can download it on the page below:\r\n%2").arg(betaVersion).arg(downloadurl));
-                }
-            }
-        }
-
-        BearWareLoginDlg::registerUrl = getBearWareRegistrationUrl(doc);
-    }
-    if(!updateFound && manualCheck)
-    {
-        QMessageBox::information(this, tr("Check for Update"), tr("%1 is up to date.").arg(APPNAME_SHORT));
-    }
-    reply->manager()->deleteLater();
-}
-
-void MainWindow::slotBearWareAuthReply(QNetworkReply* reply)
-{
-    QByteArray data = reply->readAll();
-    QDomDocument doc("foo");
-    if(doc.setContent(data))
-    {
-        auto child = doc.firstChildElement("teamtalk");
-        if(!child.isNull())
-        {
-            child = child.firstChildElement("bearware");
-            if(!child.isNull())
-            {
-                auto id = child.firstChildElement("username");
-                if(!id.isNull())
-                    m_host.username = id.text();
-            }
-        }
-    }
-    reply->manager()->deleteLater();
-
-    // connect even if auth failed. Otherwise user will not see progress
-    login();
-}
-
-void MainWindow::slotClosedOnlineUsersDlg(int)
-{
-    m_onlineusersdlg = nullptr;
-}
-
-void MainWindow::slotClosedServerStatsDlg(int)
-{
-    m_serverstatsdlg = nullptr;
-}
-
-void MainWindow::slotClosedUserAccountsDlg(int)
-{
-    m_useraccountsdlg = nullptr;
-}
-
-void MainWindow::slotClosedBannedUsersDlg(int)
-{
-    m_bannedusersdlg = nullptr;
-}
-
-void MainWindow::startTTS()
-{
-    switch (ttSettings->value(SETTINGS_TTS_ENGINE, SETTINGS_TTS_ENGINE_DEFAULT).toUInt())
-    {
-#if defined(QT_TEXTTOSPEECH_LIB)
-    case TTSENGINE_QT :
-    {
-        delete ttSpeech;
-        ttSpeech = new QTextToSpeech(this);
-        ttSpeech->setRate(ttSettings->value(SETTINGS_TTS_RATE, SETTINGS_TTS_RATE_DEFAULT).toDouble());
-        ttSpeech->setVolume(ttSettings->value(SETTINGS_TTS_VOLUME, SETTINGS_TTS_VOLUME_DEFAULT).toDouble());
-        QString locale = ttSettings->value(SETTINGS_TTS_LOCALE).toString();
-        QVector<QLocale> locales = ttSpeech->availableLocales();
-        auto selLocale = std::find_if(locales.begin(), locales.end(), [locale](const QLocale& l) {
-           return l.nativeLanguageName() == locale;
-        });
-        if (selLocale != locales.end())
-        {
-            ttSpeech->setLocale(*selLocale);
-        }
-        else if (locales.size())
-        {
-            qDebug() << "Locales found";
-        }
-        else
-        {
-            addStatusMsg(STATUSBAR_BYPASS, tr("Language %1 not found for Text-To-Speech").arg(locale));
-        }
-        QString voice = ttSettings->value(SETTINGS_TTS_VOICE).toString();
-        QVector<QVoice> voices = ttSpeech->availableVoices();
-        auto selVoice = std::find_if(voices.begin(), voices.end(), [voice](const QVoice& v) {
-           return v.name() == voice;
-        });
-        if (selVoice != voices.end())
-        {
-            ttSpeech->setVoice(*selVoice);
-        }
-        else if (voices.size())
-        {
-            addStatusMsg(STATUSBAR_BYPASS, tr("Voice %1 not found for Text-To-Speech. Switching to %2").arg(voice).arg(voices[0].name()));
-            ttSpeech->setVoice(voices[0]);
-        }
-        else
-        {
-            addStatusMsg(STATUSBAR_BYPASS, tr("No available voices found for Text-To-Speech"));
-        }
-    }
-    break;
-#endif
-
-#if defined(ENABLE_TOLK)
-    case TTSENGINE_TOLK :
-    {
-        if (!Tolk_IsLoaded())
-        {
-            Tolk_Load();
-            Tolk_TrySAPI(true);
-        }
-    }
-    break;
-#endif
-    case TTSENGINE_QTANNOUNCEMENT :
-#if QT_VERSION >= QT_VERSION_CHECK(6,8,0)
-        announcerObject = this;
-#endif
-        break;
-    }
-}
-
-void MainWindow::slotTextChanged()
-{
-    ui.sendButton->setVisible(ui.msgEdit->text().size()>0);
-    ui.videosendButton->setVisible(ui.videomsgEdit->text().size()>0);
-    ui.desktopsendButton->setVisible(ui.desktopmsgEdit->text().size()>0);
-}
-
-void MainWindow::keyPressEvent(QKeyEvent* e)
-{
-    if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return)
-    {
-#if defined(Q_OS_DARWIN)
-        if (ui.channelsWidget->hasFocus())
-        {
-            User user;
-            if(ui.channelsWidget->getUser(ui.channelsWidget->selectedUser(), user))
-                slotUserDoubleClicked(ui.channelsWidget->selectedUser());
-            else
-                slotChannelDoubleClicked(ui.channelsWidget->selectedChannel(true));
-        }
-#endif
-        if (ui.filesView->hasFocus())
-        {
-            slotChannelsDownloadFile();
-        }
-    }
-
-    if (m_chathistory[TAB_CHAT]->hasFocus() ||
-        m_chathistory[TAB_VIDEO]->hasFocus() ||
-        m_chathistory[TAB_DESKTOP]->hasFocus())
-    {
-        QString key = e->text();
-        if (!key.isEmpty() && key.size() == 1)
-        {
-            QChar keyText = key.at(0);    
-            if (keyText.isPrint())
-            {
-                if (m_chathistory[TAB_CHAT]->hasFocus())
-                {
-                    ui.msgEdit->setFocus();
-                    ui.msgEdit->kPress(e);
-                }
-                else if (m_chathistory[TAB_VIDEO]->hasFocus())
-                {
-                    ui.videomsgEdit->setFocus();
-                    ui.videomsgEdit->kPress(e);
-                }
-                else if (m_chathistory[TAB_DESKTOP]->hasFocus())
-                {
-                    ui.desktopmsgEdit->setFocus();
-                    ui.desktopmsgEdit->kPress(e);
-                }
-            }
-        }
-    }
-    QMainWindow::keyPressEvent(e);
-}
-
-void MainWindow::closeEvent(QCloseEvent *event)
-{
-#if defined(Q_OS_DARWIN)
-    QMainWindow::closeEvent(event);
-#else
-    slotClientExit();
-#endif
-}
-
-void MainWindow::slotSpeakClientStats(bool /*checked = false*/)
-{
-    ClientStatistics stats = {};
-    TT_GetClientStatistics(ttInst, &stats);
-    float rx = float(stats.nUdpBytesRecv - m_clientstats.nUdpBytesRecv);
-    float tx = float(stats.nUdpBytesSent - m_clientstats.nUdpBytesSent);
-    int ping = stats.nUdpPingTimeMs;
-    QString strstats = QString("RX: %1, TX: %2").arg(getFormattedSize(rx)).arg(getFormattedSize(tx));
-    if (ping >= 0)
-        strstats += QString(", PING: %3").arg(ping);
-    addTextToSpeechMessage(strstats);
-}
+    else if (id > 0 && (id == ui.channelsWidget->selectedChannel(true) || id == m_mychannel.nChannel
